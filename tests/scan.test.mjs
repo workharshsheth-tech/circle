@@ -2,7 +2,8 @@
 // Needs the local emulators (npm run dev).
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { P, FS, AU, driveFiles, run, parse } from "./gas-harness.mjs";
+import { readFileSync } from "node:fs";
+import { P, FS, AU, driveFiles, run, parse, post } from "./gas-harness.mjs";
 
 const all = async () => {
   const r = await (await fetch(`${FS}/v1/projects/${P}/databases/(default)/documents/candidates?pageSize=100`, { headers: { Authorization: "Bearer owner" } })).json();
@@ -50,4 +51,27 @@ test("same girl already in Circle: fills gaps only, keeps Harsh's edits", async 
 
 test("files already seen are not processed again", () => {
   assert.equal(run("scanFolder").processed.length, 0);
+});
+
+test("no separate photo: her picture is taken from inside the biodata PDF (not the page background or banner)", async () => {
+  driveFiles.push({ id: "f6", name: "Meera_Joshi_biodata.pdf", mimeType: "application/pdf", text: "Name: Meera Joshi\nHeight: 5'2\"", bytes: readFileSync("tests/fixtures/biodata-with-photo.pdf") });
+  run("scanFolder");
+  const m = (await all()).find((c) => c.name === "Meera Joshi");
+  assert.match(m.photo, /^data:image\/jpeg;base64,/);
+  const jpg = Buffer.from(m.photo.split(",")[1], "base64");
+  const i = jpg.indexOf(Buffer.from([0xff, 0xc0])); // size marker
+  assert.equal(jpg.readUInt16BE(i + 7), 300); assert.equal(jpg.readUInt16BE(i + 5), 400);
+});
+
+test("Photo from biodata: only Harsh gets the pictures, best first", async () => {
+  const k = "?key=demo-key", base = `${AU}/identitytoolkit.googleapis.com/v1`, h = { "Content-Type": "application/json" };
+  await fetch(`${AU}/emulator/v1/projects/${P}/accounts`, { method: "DELETE" });
+  const up = await (await fetch(`${base}/accounts:signUp${k}`, { method: "POST", headers: h, body: JSON.stringify({ email: "work.harshsheth@gmail.com", password: "pw123456", returnSecureToken: true }) })).json();
+  await fetch(`${base}/projects/${P}/accounts:update`, { method: "POST", headers: { ...h, Authorization: "Bearer owner" }, body: JSON.stringify({ localId: up.localId, emailVerified: true }) });
+  const tok = (await (await fetch(`${base}/accounts:signInWithPassword${k}`, { method: "POST", headers: h, body: JSON.stringify({ email: "work.harshsheth@gmail.com", password: "pw123456", returnSecureToken: true }) })).json()).idToken;
+  assert.equal(post({ action: "photos", fileId: "f6" }).ok, false);
+  const r = post({ idToken: tok, action: "photos", fileId: "f6" });
+  assert.equal(r.ok, true, JSON.stringify(r).slice(0, 200)); assert.equal(r.photos.length, 3);
+  const first = Buffer.from(r.photos[0].split(",")[1], "base64"), i = first.indexOf(Buffer.from([0xff, 0xc0]));
+  assert.equal(first.readUInt16BE(i + 7), 300);
 });

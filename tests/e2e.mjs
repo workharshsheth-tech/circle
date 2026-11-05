@@ -2,7 +2,7 @@
 // node tests/e2e.mjs  -> screenshots in shots/
 import { createRequire } from "node:module";
 const { chromium } = createRequire(import.meta.url)("playwright");
-import { post as intake } from "./gas-harness.mjs";
+import { post as intake, driveFiles } from "./gas-harness.mjs";
 import { readFileSync, mkdirSync } from "node:fs";
 const BASE = "http://localhost:5000/", AUTH = "http://127.0.0.1:9099";
 const OWNER = "work.harshsheth@gmail.com", MUM = "mum@example.com";
@@ -85,6 +85,21 @@ await o.fill('input[name="pdfUrl"]', "https://drive.google.com/file/d/TEST_FILE_
 await o.click('button:has-text("Save")');
 await o.locator("a.pdf").waitFor();
 ok(true, "owner attaches a Drive PDF (non-Drive links refused)");
+// Photo from biodata: the intake script pulls the pictures out of her PDF; Harsh picks one and crops it.
+driveFiles.push({ id: "TEST_FILE_ID_000000000000", name: "Asha.pdf", mimeType: "application/pdf", bytes: readFileSync("tests/fixtures/biodata-with-photo.pdf") });
+await o.click('a:has-text("Edit")');
+await o.click('[data-act="frombio"]');
+await o.locator(".pick button").first().waitFor();
+ok((await o.locator(".pick button").count()) === 3, "From biodata shows the 3 pictures inside her PDF");
+await o.locator(".pick button").first().click();
+await o.locator(".crop .sq").waitFor();
+await o.waitForTimeout(300);
+await o.screenshot({ path: "shots/11-crop-412.png" });
+await o.click("[data-ok]");
+await o.locator("#pv img").waitFor();
+await o.click('button:has-text("Save")');
+await o.locator(".hero .ph-img img").waitFor();
+ok(true, "Harsh crops her face and it becomes her profile photo");
 await o.fill("#f-cm textarea", "Good family, met them at Lakhtar samaj event.");
 await o.click('#f-cm button[type="submit"]');
 await o.getByText("Good family, met them").waitFor();

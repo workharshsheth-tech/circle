@@ -63,15 +63,18 @@ Harsh meets her → Going ahead**, plus **On hold** and **Pass**.
 - **Harsh's part** (only Harsh sees): **My call** (Yes / Not sure / No) and private notes on each profile.
 - **My criteria** tab (only Harsh): what he wants and how much it matters (Must / Nice / Doesn't matter), deal-breakers,
   what he learnt from meetings, thinking out loud. Each profile shows "Against my criteria"; the list flags "Misses a must".
-- **Sources** tab (only Harsh): every biodata grouped by where it came from, and how many from each moved ahead.
-  Set it on a profile under "Only you see this › Came from". The folder watcher fills it in by itself.
+- **Sources** tab (only Harsh): every biodata grouped by where it came from (Pratima Ben, Bina Ben, matrimonial site,
+  Seema Aunty…), and how many from each moved ahead. Set it on a profile under Edit › "Biodata came from".
+- **Profiles list**: grouped by stage, numbered 1–8 along the path. Filters: Stage, Source, Harshaben (passed / not / not yet),
+  Community (all Jain groups as "Jain"), Language (choose several), City, and Height last.
 
 ## New biodatas arrive by themselves
 
 The Seema Aunty bot already saves biodatas in Drive › **Seema Aunty · Biodatas › From chat**. A small Google Apps Script
 (`apps-script/`, running as Harsh) checks that folder every 15 minutes. For each new girl it reads the biodata with
 Google's own text reading, adds her in **New** (shared with no one), fills height, date of birth, community, native,
-education, work and marital status, attaches the PDF and photo, and sets Sources. If she's already in Circle, it only fills
+education, work and marital status, attaches the PDF, sets the source, and adds her photo: a separate photo file
+if Seema Aunty saved one, otherwise the best picture inside the biodata PDF (page backgrounds and banners are skipped). If she's already in Circle, it only fills
 empty fields. Phones, emails and addresses are left out. Harsh's own biodata is skipped.
 
 The same script powers **Profiles › Upload PDF**. Optionally the bot can post to it directly (`docs/seema-bot.md`).
@@ -85,7 +88,7 @@ The same script powers **Profiles › Upload PDF**. Optionally the bot can post 
    `FOLDER_ID` = `1KW3nb2zWCn0uI7F8Bkt2_0W9-KRyWzzu` (From chat), `OWNER_EMAIL` = `work.harshsheth@gmail.com`.
 4. In the editor, pick **setupCheck** in the function list > **Run** > allow the permissions (Advanced > Go to Circle intake).
    The log should say "All good". Then pick **installTrigger** > **Run**.
-5. Optional, for **Upload PDF**: **Deploy > New deployment > Web app**, Execute as **Me**, access **Anyone** > Deploy.
+5. For **Upload PDF** and **Edit › From biodata** (pick and crop her photo from the biodata): **Deploy > New deployment > Web app**, Execute as **Me**, access **Anyone** > Deploy.
    Paste the web app URL in Circle under **Family > Setup > Intake link**.
 
 ## Set up (one time, about 15 minutes)
@@ -108,7 +111,7 @@ No environment variables are needed. If you change the owner email, change it in
 
 - `npm run dev` starts local Auth, Firestore and Hosting emulators. Open http://localhost:5000.
   Sign-in links appear at http://127.0.0.1:9099/emulator/v1/projects/demo-family-review/oobCodes.
-- `npm test` runs the security rules tests (9), intake tests (5) and folder-watcher tests (4).
+- `npm test` runs the security rules tests (10), intake tests (5) and folder-watcher tests (6).
 - `node tests/e2e.mjs` (with `npm run dev` running) drives a real browser: owner signs in, imports, invites,
   shares; reviewer signs in, rates, comments; a stranger is turned away. Screenshots go to `shots/`.
 

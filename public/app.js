@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 10
+// Circle · family review for Harsh. BUILD 11
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "10";
+export const BUILD = "11";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -747,6 +747,63 @@ async function uploadPdf(file) {
   } catch (e) { toast(niceErr(e)); if (btn) { btn.classList.remove("busy"); btn.firstChild.textContent = "Upload PDF"; } }
 }
 
+// ---------- her photo from inside the biodata (via the intake script) ----------
+async function photoFromBiodata(c, btn) {
+  if (!S.admin.intakeUrl) { toast("Add the intake link first: Family › Setup."); return null; }
+  const label = btn.textContent; btn.disabled = true; btn.textContent = "Finding photos…";
+  try {
+    const idToken = await S.user.getIdToken();
+    const r = await (await fetch(S.admin.intakeUrl, { method: "POST", body: JSON.stringify({ idToken, action: "photos", fileId: driveId(c.pdfUrl) }) })).json();
+    if (!r.ok) throw new Error(r.error || "Couldn't read the biodata");
+    if (!r.photos.length) { toast("No photo inside this biodata."); return null; }
+    return await pickAndCrop(r.photos);
+  } catch (e) { toast(niceErr(e)); return null; }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+// Show the pictures; tap one; drag the square onto her face; Use photo.
+function pickAndCrop(urls) {
+  return new Promise((done) => {
+    const box = document.createElement("div"); box.className = "sheet";
+    const close = (v) => { box.remove(); done(v); };
+    const grid = () => {
+      box.innerHTML = `<div class="sheet-in"><div class="ph" style="margin:0 0 12px"><h2>Pick her photo</h2><button class="btn plain sm" data-x>Cancel</button></div>
+        <div class="pick">${urls.map((u, i) => `<button data-i="${i}"><img src="${u}" alt=""></button>`).join("")}</div></div>`;
+      box.querySelector("[data-x]").onclick = () => close(null);
+      box.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => crop(urls[+b.dataset.i])));
+    };
+    const crop = (u) => {
+      box.innerHTML = `<div class="sheet-in"><div class="ph" style="margin:0 0 12px"><h2>Move the square onto her face</h2></div>
+        <div class="crop"><img src="${u}" alt=""><div class="sq"></div></div>
+        <label class="f" style="margin-top:12px"><span>Size</span><input type="range" min="15" max="100" value="60" data-size></label>
+        <div style="display:flex;gap:8px"><button class="btn" data-ok>Use photo</button>${urls.length > 1 ? `<button class="btn ghost" data-back>Other pictures</button>` : ""}<button class="btn plain" data-x>Cancel</button></div></div>`;
+      const wrap = box.querySelector(".crop"), img = wrap.querySelector("img"), sq = wrap.querySelector(".sq"), size = box.querySelector("[data-size]");
+      let x = 0, y = 0, s = 0;
+      const place = () => {
+        const W = img.clientWidth, H = img.clientHeight; s = Math.min(W, H) * size.value / 100;
+        x = Math.max(0, Math.min(W - s, x)); y = Math.max(0, Math.min(H - s, y));
+        Object.assign(sq.style, { left: x + "px", top: y + "px", width: s + "px", height: s + "px" });
+      };
+      img.onload = () => { const W = img.clientWidth, H = img.clientHeight; s = Math.min(W, H) * 0.6; x = (W - s) / 2; y = (H - s) / 3; place(); };
+      if (img.complete) img.onload();
+      size.oninput = place;
+      let drag = null;
+      sq.onpointerdown = (e) => { drag = { px: e.clientX, py: e.clientY, x, y }; sq.setPointerCapture(e.pointerId); };
+      sq.onpointermove = (e) => { if (!drag) return; x = drag.x + e.clientX - drag.px; y = drag.y + e.clientY - drag.py; place(); };
+      sq.onpointerup = () => (drag = null);
+      box.querySelector("[data-back]")?.addEventListener("click", grid);
+      box.querySelector("[data-x]").onclick = () => close(null);
+      box.querySelector("[data-ok]").onclick = () => {
+        const k = img.naturalWidth / img.clientWidth, cv = document.createElement("canvas"), out = Math.min(480, Math.round(s * k));
+        cv.width = cv.height = out;
+        cv.getContext("2d").drawImage(img, x * k, y * k, s * k, s * k, 0, 0, out, out);
+        close(cv.toDataURL("image/jpeg", 0.82));
+      };
+    };
+    document.body.appendChild(box);
+    urls.length === 1 ? crop(urls[0]) : grid();
+  });
+}
+
 // ---------- add / edit ----------
 const FIELDS = [
   ["name", "Full name", "text", true], ["dob", "Date of birth", "date"], ["age", "Age (if no date of birth)", "number"],
@@ -781,6 +838,7 @@ function viewEdit(id) {
     <form id="f-edit">
       <div class="hero" style="margin-top:0"><div class="ph-img" id="pv">${photo ? `<img src="${photo}" alt="">` : "+"}</div>
         <div><label class="btn ghost sm">Choose photo<input type="file" accept="image/*" name="photo" hidden></label>
+        ${id && isDrive(c.pdfUrl) && driveId(c.pdfUrl) ? ` <button class="btn ghost sm" type="button" data-act="frombio">From biodata</button>` : ""}
         ${photo ? ` <button class="btn plain sm" type="button" data-act="nophoto">Remove</button>` : ""}<div class="hint" style="margin-top:6px">Kept small, only in this app.</div></div></div>
       <label class="f"><span>Stage</span><select class="in-t" name="stage">${STAGES.map((s) => `<option ${s === stageOf(c) ? "selected" : ""}>${s}</option>`).join("")}</select></label>
       ${FIELDS.slice(0, 3).map(fieldHtml(c)).join("")}
@@ -798,6 +856,10 @@ function viewEdit(id) {
   const f = document.getElementById("f-edit");
   f.querySelectorAll(".seg.multi input").forEach((i) => (i.onchange = () => i.closest("label").classList.toggle("on", i.checked)));
   f.photo.onchange = async () => { const file = f.photo.files[0]; if (!file) return; photo = await resizePhoto(file); document.getElementById("pv").innerHTML = `<img src="${photo}" alt="">`; };
+  $app.querySelector('[data-act="frombio"]')?.addEventListener("click", async (e) => {
+    const got = await photoFromBiodata(c, e.currentTarget);
+    if (got) { photo = got; document.getElementById("pv").innerHTML = `<img src="${photo}" alt="">`; }
+  });
   $app.querySelector('[data-act="nophoto"]')?.addEventListener("click", () => { photo = ""; document.getElementById("pv").textContent = "+"; });
   f.onsubmit = async (e) => {
     e.preventDefault();

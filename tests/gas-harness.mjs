@@ -12,7 +12,7 @@ export const saved = [];
 // Fake Drive folder for scanFolder(): { id, name, mimeType, text, thumb }
 export const driveFiles = [];
 const fileObj = (f) => ({ getId: () => f.id, getName: () => f.name, getMimeType: () => f.mimeType,
-  getBlob: () => ({ fileId: f.id }), getThumbnail: () => (f.thumb ? { getBytes: () => Buffer.from(f.thumb) } : null) });
+  getBlob: () => ({ fileId: f.id, getBytes: () => [...(f.bytes || [])] }), getThumbnail: () => (f.thumb ? { getBytes: () => Buffer.from(f.thumb) } : null) });
 function curl(url, opt = {}) {
   const ex = url.match(/drive\/v3\/files\/ocr_(.+)\/export/);
   if (ex) { const f = driveFiles.find((x) => x.id === ex[1]); return { getResponseCode: () => 200, getContentText: () => f?.text || "" }; }
@@ -34,7 +34,7 @@ const ctx = vm.createContext({
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Drive: { Files: { create: (meta, blob) => ({ id: "ocr_" + blob.fileId }), remove() {} } },
   console: { log() {}, warn() {} },
-  DriveApp: { getFolderById: (id) => ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
+  DriveApp: { getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)), getFolderById: (id) => ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
 });
 vm.runInContext(readFileSync("apps-script/Code.gs", "utf8"), ctx);
 export const props_ = props;
