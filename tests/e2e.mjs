@@ -48,7 +48,7 @@ for (const f of ["manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.p
   ok((await fetch(BASE + f)).status === 200, "serves " + f);
 await o.screenshot({ path: "shots/1-owner-list-412.png" });
 await o.locator('details.grp[data-stage="Pass"] summary').click();
-ok(await o.getByText("Height fail · 5′8″").isVisible(), "Kavya (5′8″) shows Height fail");
+await o.locator(".hmini.fail", { hasText: "5′8″" }).waitFor(); ok(true, "Kavya (5′8″) shows height fail, small and last");
 await o.goto(BASE + "#/people");
 await o.fill('#f-add input[name="name"]', "Mummy");
 await o.fill('#f-add input[name="email"]', MUM);
@@ -102,6 +102,7 @@ await pop.fill("#email-input", MUM);
 await pop.fill("#display-name-input", "Mummy");
 await pop.getByText("Sign in with Google.com").click();
 ok(true, "Mummy signs in with Continue with Google");
+await m.getByText("Profiles Harsh shared").waitFor();
 await m.locator("details.grp").first().waitFor();
 await m.locator("details.grp summary").first().click();
 ok((await m.locator(".cr").count()) === 1, "reviewer sees only the 1 shared profile");
@@ -192,5 +193,18 @@ ok((await d.locator('details.grp[data-src="Seema Aunty"] .n').textContent()) ===
 await d.locator('details.grp summary').first().click();
 await d.screenshot({ path: "shots/8-sources-1280.png" });
 await d.screenshot({ path: "shots/4-owner-detail-1280.png", fullPage: true });
+// Main view filters: source, Harshaben, Jain grouping, language multi-select; height shown last and small.
+await d.goto(BASE + "#/");
+await d.selectOption('select[data-filter="source"]', "Seema Aunty");
+ok((await d.locator(".cr").count()) === 2, "Source filter: Seema Aunty shows her 2 biodatas");
+await d.selectOption('select[data-filter="source"]', "");
+await d.selectOption('select[data-filter="hb"]', "Passed");
+ok((await d.locator(".cr").count()) === 1 && await d.getByText("Asha Mehta").isVisible(), "Harshaben: passed shows only Asha");
+await d.click('[data-act="clear"]');
+await d.locator("details.ms summary").click();
+await d.locator('[data-lang="Gujarati"]').check();
+ok((await d.locator(".cr").count()) >= 1, "Language multi-select filters (Gujarati)");
+await d.screenshot({ path: "shots/10-main-view-1280.png" });
+
 await browser.close();
 console.log("ALL OK");

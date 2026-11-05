@@ -32,7 +32,7 @@ test("bot sends a PDF with fields: profile is created, filed, and sorted", async
   assert.match(d.pdfUrl.stringValue, /^https:\/\/drive\.google\.com\/file\/d\/FILE1/);
   assert.equal(d.viewers.arrayValue.values, undefined); // shared with no one
   const p = (await getDoc(`candidates/${r.id}/private/notes`)).fields;
-  assert.match(p.source.stringValue, /Seema Aunty bot/); assert.equal(p.contact.stringValue, "Father 98xxxxxx");
+  assert.match(p.source.stringValue, /Seema Aunty/); assert.equal(d.source.stringValue, "Seema Aunty"); assert.equal(p.contact.stringValue, "Father 98xxxxxx");
 });
 test("same name again fills gaps only and attaches the new PDF", async () => {
   const r = post({ secret: SECRET, file: { name: "shivani-v2.pdf", base64: PDF }, fields: { name: "shivani malik", city: "Mumbai", education: "MBA" } });

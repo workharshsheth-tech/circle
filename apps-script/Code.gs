@@ -1,4 +1,4 @@
-// Circle intake. BUILD 7
+// Circle intake. BUILD 10
 // Runs as Harsh. Three ways a biodata reaches Circle:
 //  1. scanFolder(): every 15 minutes it looks in the Drive folder where the Seema Aunty bot saves biodatas
 //     ("From chat"), reads each new PDF / image, and adds or fills in the profile. No change to the bot needed.
@@ -73,10 +73,11 @@ function intake_(body, who) {
   if (!c.name) c.name = file && file.name ? nameFromFile_(file.name) : "";
   if (!c.name) throw new Error("no name and no file");
 
+  var source = { bot: "Seema Aunty", folder: "Seema Aunty · From chat", harsh: "Uploaded in Circle" }[who] || who;
+  c.source = source;
   // 2. Same name already in Circle? Fill in what's missing and attach the PDF; never overwrite Harsh's edits.
   var existing = findByName_(c.name);
   var heightFit = c.heightIn ? (c.heightIn <= HARSH_HEIGHT_IN ? "pass" : "fail") : "unknown";
-  var source = { bot: "Seema Aunty bot", folder: "Seema Aunty · From chat folder", harsh: "Uploaded in Circle" }[who] || who;
   if (existing) {
     var patch = {};
     Object.keys(c).forEach(function (k) { if (existing.data[k] == null || existing.data[k] === "") patch[k] = c[k]; });

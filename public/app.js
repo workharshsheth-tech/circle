@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 9
+// Circle · family review for Harsh. BUILD 10
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "9";
+export const BUILD = "10";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -45,6 +45,33 @@ function impliedStage(p) {
   return "New";
 }
 const KUNDLI = ["", "Pending", "Match", "No match"];
+// Where biodatas come from. The family's usual sources first; new ones are added as they're typed.
+const SOURCES = ["Pratima Ben", "Bina Ben", "Matrimonial site", "Seema Aunty"];
+const sourceOf = (c) => c.source || "Not recorded";
+const sourceList = () => [...new Set([...SOURCES, ...[...S.cands.values()].map((c) => c.source).filter(Boolean)])];
+// All Jain sub-communities sit together as "Jain" in the filter; the full name stays on the profile.
+function communityGroup(s) {
+  const x = lc(s);
+  if (!x) return "";
+  if (/jain|deravas|derawas|sthanak|shwetamb|digamb|terapanth/.test(x)) return "Jain";
+  if (/lohana/.test(x)) return "Lohana";
+  if (/vaishnav|vanik|baniya|bania/.test(x)) return "Vaishnav";
+  if (/punjabi|arora|khatri/.test(x)) return "Punjabi";
+  if (/brahmin/.test(x)) return "Brahmin";
+  if (/patel|patidar/.test(x)) return "Patel";
+  return "Other";
+}
+const LANGS = ["Gujarati", "Kutchi", "Hindi", "Marathi", "Marwari", "Punjabi", "Sindhi", "English"];
+// Languages she speaks at home: set on the profile, or a first guess from community / native place.
+function langsOf(c) {
+  if (Array.isArray(c.languages) && c.languages.length) return c.languages;
+  const x = lc([c.community, c.native].join(" "));
+  if (/kutch|kachchh|bhuj/.test(x)) return ["Kutchi"];
+  if (/punjab|arora|khatri/.test(x)) return ["Punjabi"];
+  if (/jain|vaishnav|gujarat|saurashtra|kathiawad|lohana|patel|rajkot|palanpur|deesa|patan|lakhtar|limbdi|mahuva|amba|vadia/.test(x)) return ["Gujarati"];
+  return [];
+}
+const hbOf = (c) => (c.harshaben === "Match" ? "Passed" : c.harshaben === "No match" ? "Not passed" : "Not yet");
 const CALLS = ["Yes", "Not sure", "No"];
 const HARSH_HEIGHT_IN = 66; // 5 ft 6 in. Partner height must be at or under this.
 const $app = document.getElementById("app");
@@ -53,7 +80,7 @@ const $app = document.getElementById("app");
 const S = {
   user: null, me: null, owner: false,
   cands: new Map(), members: [], harsh: null, settings: {}, admin: {}, criteria: {}, privAll: null, summaries: new Map(),
-  filters: { stage: "", height: "", community: "", city: "", q: "", archived: false },
+  filters: { stage: "", source: "", hb: "", community: "", langs: [], city: "", height: "", q: "", archived: false },
   open: new Set(), unsubs: [], detailUnsubs: [], route: "",
 };
 
@@ -63,6 +90,10 @@ const lc = (s) => String(s || "").trim().toLowerCase();
 const handle = (email) => "@" + String(email || "").split("@")[0];
 const initials = (n) => String(n || "?").split(/\s+/).filter(Boolean).filter((w) => !/^dr\.?$/i.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 const ftIn = (inch) => (inch ? `${Math.floor(inch / 12)}′${inch % 12}″` : "");
+function heightMini(inch) {
+  const f = heightFit(inch);
+  return f === "unknown" ? "" : `<span class="hmini ${f}">${f === "pass" ? "✓" : "✕"} ${ftIn(inch)}</span>`;
+}
 function heightFit(inch) { return !inch ? "unknown" : inch <= HARSH_HEIGHT_IN ? "pass" : "fail"; }
 function heightTag(inch) {
   const f = heightFit(inch);
@@ -198,7 +229,7 @@ async function startData() {
   let first = true;
   S.unsubs.push(onSnapshot(q, (snap) => {
     S.cands = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }])); S.privAll = null;
-    loadSummaries(); if (first) { first = false; route(); } else rerenderSoft();
+    loadSummaries(); if (first) { first = false; route(); if (S.owner) moveSources(); } else rerenderSoft();
   }, (e) => toast(niceErr(e))));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "criteria"), (d) => { S.criteria = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; }, () => {}));
@@ -210,6 +241,15 @@ async function startData() {
   S.unsubs.push(onSnapshot(doc(db, "reference", "harsh"), (d) => { S.harsh = d.exists() ? d.data() : null; if (S.route.startsWith("#/harsh")) rerenderSoft(); }, () => {}));
 }
 
+// Earlier builds kept "Came from" in the private notes; it now sits on the profile so it can be a filter.
+async function moveSources() {
+  for (const c of S.cands.values()) {
+    if (c.source) continue;
+    const d = await getDoc(doc(db, "candidates", c.id, "private", "notes")).catch(() => null);
+    const src = d?.exists() && d.data().source;
+    if (src) await updateDoc(doc(db, "candidates", c.id), { source: String(src).slice(0, 80) }).catch(() => {});
+  }
+}
 // Rating summaries per candidate. Reviewers only get the family score after they rate (blind first).
 async function loadSummary(id) {
   const email = lc(S.user.email);
@@ -312,10 +352,13 @@ function filtered() {
   return [...S.cands.values()].filter((c) =>
     (S.owner ? (f.archived ? c.archived : !c.archived) : true) &&
     (!f.stage || stageOf(c) === f.stage) &&
-    (!f.height || heightFit(c.heightIn) === f.height) &&
-    (!f.community || c.community === f.community) &&
+    (!f.source || sourceOf(c) === f.source) &&
+    (!f.hb || hbOf(c) === f.hb) &&
+    (!f.community || communityGroup(c.community) === f.community) &&
+    (!f.langs.length || f.langs.some((l) => langsOf(c).includes(l))) &&
     (!f.city || c.city === f.city) &&
-    (!q || lc([c.name, c.city, c.community, c.work, c.education].join(" ")).includes(q)));
+    (!f.height || heightFit(c.heightIn) === f.height) &&
+    (!q || lc([c.name, c.city, c.community, c.work, c.education, c.source].join(" ")).includes(q)));
 }
 function opts(field) { return [...new Set([...S.cands.values()].map((c) => c[field]).filter(Boolean))].sort(); }
 function selChip(key, label, values, labels = values) {
@@ -325,7 +368,7 @@ function selChip(key, label, values, labels = values) {
 }
 function rowHtml(c) {
   const s = S.summaries.get(c.id) || {}, age = ageOf(c);
-  const sub = [age && `${age}`, c.city, c.community].filter(Boolean).join(" · ");
+  const sub = [age && `${age}`, c.city, communityGroup(c.community), c.source].filter(Boolean).join(" · ");
   let right;
   if (S.owner) right = s.count ? `<span class="score"><span class="mini-star">★</span> <b>${s.avg.toFixed(1)}</b> · ${s.count}</span>` : `<span class="score">No ratings</span>`;
   else right = s.mine ? `<span class="score">You <span class="mini-star">★</span><b>${s.mine}</b></span>` : `<span class="tag blue">Rate</span>`;
@@ -334,10 +377,10 @@ function rowHtml(c) {
   return `<a class="cr" href="#/c/${c.id}">
     <div class="av">${c.photo ? `<img src="${c.photo}" alt="" loading="lazy">` : esc(initials(c.name))}</div>
     <div class="m"><div class="nm">${esc(c.name)}</div><div class="sub">${esc(sub) || "&nbsp;"}</div></div>
-    <div class="r">${heightTag(c.heightIn)}<div>${hb}${flags.map((x) => `<span class="tag mute">${x}</span>`).join(" ")} ${right}</div></div></a>`;
+    <div class="r"><div>${hb}${flags.map((x) => `<span class="tag mute">${x}</span>`).join(" ")} ${right}</div>${heightMini(c.heightIn)}</div></a>`;
 }
 function viewList() {
-  const list = filtered(), f = S.filters, any = f.stage || f.height || f.community || f.city || f.q;
+  const list = filtered(), f = S.filters, any = f.stage || f.source || f.hb || f.community || f.langs.length || f.city || f.height || f.q;
   const groups = STAGES.map((st) => [st, list.filter((c) => stageOf(c) === st).sort((a, b) => a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
   const total = S.owner ? [...S.cands.values()].filter((c) => !c.archived).length : S.cands.size;
   $app.innerHTML = shell(`
@@ -348,15 +391,19 @@ function viewList() {
     <input class="search" type="search" placeholder="Search name, city, work" value="${esc(f.q)}" data-filter="q">
     <div class="filters">
       ${selChip("stage", "Stage", STAGES)}
-      ${selChip("height", "Height", ["pass", "fail", "unknown"], ["Height pass", "Height fail", "Height not known"])}
-      ${selChip("community", "Community", opts("community"))}
+      ${selChip("source", "Source", [...sourceList(), "Not recorded"])}
+      ${selChip("hb", "Harshaben", ["Passed", "Not passed", "Not yet"], ["Harshaben: passed", "Harshaben: not passed", "Harshaben: not yet"])}
+      ${selChip("community", "Community", [...new Set([...S.cands.values()].map((c) => communityGroup(c.community)).filter(Boolean))].sort())}
+      <details class="chip ms ${f.langs.length ? "on" : ""}"><summary>${f.langs.length ? f.langs.join(", ") : "Language"}</summary>
+        <div class="ms-pop">${LANGS.map((l) => `<label><input type="checkbox" data-lang="${l}" ${f.langs.includes(l) ? "checked" : ""}>${l}</label>`).join("")}</div></details>
       ${selChip("city", "City", opts("city"))}
+      ${selChip("height", "Height", ["pass", "fail", "unknown"], ["Height pass", "Height fail", "Height not known"])}
       ${S.owner ? `<button class="chip ${f.archived ? "on" : ""}" data-act="arch">Archived</button>` : ""}
       ${any ? `<button class="chip" data-act="clear">Clear</button>` : ""}
     </div>
     ${groups.length ? groups.map(([st, l]) => `
       <details class="grp" data-stage="${esc(st)}" ${S.open.has(st) || any ? "open" : ""}>
-        <summary><span class="dot" style="opacity:${0.35 + 0.65 * (1 - STAGES.indexOf(st) / STAGES.length)}"></span>${esc(st)}<span class="n">${l.length}</span><span class="sp"></span><span class="car"></span></summary>
+        <summary>${SIDE.includes(st) ? `<span class="step side"></span>` : `<span class="step">${STAGES.indexOf(st) + 1}</span>`}${esc(st)}<span class="n">${l.length}</span><span class="sp"></span><span class="car"></span></summary>
         ${l.map(rowHtml).join("")}
       </details>`).join("") :
       `<div class="empty">${total ? "Nothing matches these filters." : S.owner ? "No profiles yet. Add one or import a list." : "Harsh hasn't shared any profiles with you yet."}</div>`}
@@ -369,7 +416,11 @@ function viewList() {
   s.oninput = () => { S.filters.q = s.value; const pos = s.selectionStart; viewList(); const n = $app.querySelector('input[data-filter="q"]'); n.focus(); n.setSelectionRange(pos, pos); };
   $app.querySelector('[data-act="upload"]')?.addEventListener("change", (e) => uploadPdf(e.target.files[0]));
   $app.querySelector('[data-act="arch"]')?.addEventListener("click", () => { S.filters.archived = !S.filters.archived; viewList(); });
-  $app.querySelector('[data-act="clear"]')?.addEventListener("click", () => { Object.assign(S.filters, { stage: "", height: "", community: "", city: "", q: "" }); viewList(); });
+  $app.querySelector('[data-act="clear"]')?.addEventListener("click", () => { Object.assign(S.filters, { stage: "", source: "", hb: "", community: "", langs: [], city: "", height: "", q: "" }); viewList(); });
+  $app.querySelectorAll("[data-lang]").forEach((cb) => (cb.onchange = () => {
+    const set = new Set(S.filters.langs); cb.checked ? set.add(cb.dataset.lang) : set.delete(cb.dataset.lang);
+    S.filters.langs = LANGS.filter((l) => set.has(l)); viewList(); $app.querySelector("details.ms").open = true;
+  }));
 }
 
 // ---------- detail ----------
@@ -414,7 +465,8 @@ function drawDetail(c) {
   const facts = [
     ["Age", age ? `${age}${c.dob ? ` · born ${fmtDob(c.dob)}` : ""}` : ""],
     ["Community", c.community], ["Native", c.native], ["Lives in", c.city],
-    ["Education", c.education], ["Work", c.work], ["Family", c.family], ["Marital status", c.marital], ["Diet", c.diet],
+    ["Languages", langsOf(c).join(", ")], ["Education", c.education], ["Work", c.work], ["Family", c.family], ["Marital status", c.marital], ["Diet", c.diet],
+    ["Biodata from", c.source],
   ].filter(([, v]) => v);
   const avg = D.reviews && D.reviews.length ? D.reviews.reduce((s, r) => s + r.stars, 0) / D.reviews.length : null;
   const members = S.members.filter((m) => m.active && m.role !== "owner");
@@ -475,9 +527,8 @@ function drawDetail(c) {
       <h3>Only you see this</h3>
       ${D.priv ? `<form id="f-priv">
         <div class="f"><span class="lbl">My call</span><div class="seg">${CALLS.map((x) => `<label class="${D.priv.myCall === x ? "on" : ""}"><input type="radio" name="myCall" value="${x}" ${D.priv.myCall === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
-        <div class="row2"><label class="f"><span>Contact</span><input class="in-t" name="contact" value="${esc(D.priv.contact)}"></label>
-        <label class="f"><span>Came from</span><input class="in-t" name="source" list="src-list" value="${esc(D.priv.source)}" placeholder="Seema Aunty, Mummy's friend…"></label></div>
-        <datalist id="src-list">${[...new Set(Object.values(S.privAll || {}).map((p) => p.source).filter(Boolean))].map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
+        <div><label class="f"><span>Contact</span><input class="in-t" name="contact" value="${esc(D.priv.contact)}"></label>
+        </div>
         <label class="f"><span>Notes</span><textarea class="in-t" name="notes">${esc(D.priv.notes)}</textarea></label>
         <button class="btn ghost sm" type="submit">Save notes</button></form>` : `<div class="hint">Loading…</div>`}
     </section>` : ""}
@@ -561,7 +612,7 @@ function bindDetail(c) {
   const fp = document.getElementById("f-priv");
   if (fp) fp.onsubmit = async (e) => {
     e.preventDefault();
-    D.priv = { ...D.priv, contact: fp.contact.value.trim(), source: fp.source.value.trim(), notes: fp.notes.value.trim(), myCall: fp.querySelector('input[name="myCall"]:checked')?.value || "" };
+    D.priv = { ...D.priv, contact: fp.contact.value.trim(), notes: fp.notes.value.trim(), myCall: fp.querySelector('input[name="myCall"]:checked')?.value || "" };
     if (S.privAll) S.privAll[id] = D.priv;
     await setDoc(doc(db, "candidates", id, "private", "notes"), D.priv); document.activeElement?.blur(); toast("Notes saved");
   };
@@ -593,7 +644,7 @@ function familyPartHtml() {
 
 // ---------- Harsh's criteria (only Harsh sees these) ----------
 const CRIT = [
-  ["age", "Age", "e.g. 30–36"], ["community", "Community", "e.g. Jain, Vaishnav"], ["marital", "Marital status", "e.g. Divorced is fine"],
+  ["age", "Age", "e.g. 30–36"], ["community", "Community", "e.g. Jain, Vaishnav"], ["language", "Language", "e.g. Gujarati, Kutchi"], ["marital", "Marital status", "e.g. Divorced is fine"],
   ["diet", "Diet", "e.g. Vegetarian"], ["city", "Lives in / ready to move to", "e.g. Mumbai"], ["education", "Education", ""],
   ["work", "Work after marriage", ""], ["family", "Her family", ""], ["nature", "Nature and interests", ""],
 ];
@@ -601,8 +652,7 @@ const IMP = ["Must", "Nice", "Doesn't matter"];
 function ageRange(s) { const m = String(s || "").match(/(\d{2})\D+(\d{2})/); return m ? [+m[1], +m[2]] : null; }
 function fitChecks(c) {
   const k = S.criteria || {}, out = [], imp = (x) => (k.imp || {})[x] || "Nice";
-  const fit = heightFit(c.heightIn);
-  out.push({ label: "Height at or under 5′6″", ok: fit === "pass" ? true : fit === "fail" ? false : null, must: true });
+  out.push({ label: "Biodata passed by Harshaben", ok: c.harshaben === "Match" ? true : c.harshaben === "No match" ? false : null, must: true });
   const add = (key, label, test) => { if (!k[key] || imp(key) === "Doesn't matter") return; out.push({ label, ok: test(), must: imp(key) === "Must" }); };
   add("age", `Age ${k.age}`, () => { const r = ageRange(k.age), a = +ageOf(c); return r && a ? a >= r[0] && a <= r[1] : null; });
   const words = (s) => String(s || "").toLowerCase().split(/[,/]| or /).map((w) => w.trim()).filter(Boolean);
@@ -614,6 +664,9 @@ function fitChecks(c) {
     const was = /divorc|separat|widow|married for/i.test(c.marital);
     return /never|first marriage|unmarried/i.test(k.marital) ? !was : null;
   });
+  add("language", `Language: ${k.language}`, () => { const l = langsOf(c); return l.length ? words(k.language).some((w) => l.some((x) => lc(x) === w)) : null; });
+  const fit = heightFit(c.heightIn);
+  out.push({ label: "Height at or under 5′6″", ok: fit === "pass" ? true : fit === "fail" ? false : null, must: true });
   return out;
 }
 function fitHtml(c) {
@@ -630,10 +683,11 @@ function viewCriteria() {
     <p class="hint" style="margin-top:-6px">Write what you want, and mark how much it matters. Profiles then show where each girl fits.</p>
     <form id="f-crit">
       <section class="card">
-        <div class="crit"><div class="m"><b>Height</b><span>At or under 5′6″</span></div><span class="tag bad">Must</span></div>
+        <div class="crit"><div class="m"><b>Biodata passed by Harshaben</b><span>Filled in by the family</span></div><span class="tag bad">Must</span></div>
         ${CRIT.map(([key, label, ph]) => `<div class="crit">
           <label class="f" style="margin:0;flex:1"><span>${label}</span><input class="in-t" name="${key}" value="${esc(k[key])}" placeholder="${esc(ph)}"></label>
           <select class="chip" name="imp-${key}" aria-label="How much it matters">${IMP.map((x) => `<option ${x === (imp[key] || "Nice") ? "selected" : ""}>${x}</option>`).join("")}</select></div>`).join("")}
+        <div class="crit"><div class="m"><b>Height</b><span>At or under 5′6″</span></div><span class="tag bad">Must</span></div>
       </section>
       <section class="card">
         <label class="f"><span>Deal-breakers</span><textarea class="in-t" name="dealBreakers" placeholder="Things that end it, whatever else is good">${esc(k.dealBreakers)}</textarea></label>
@@ -660,14 +714,13 @@ async function loadPrivAll() {
   S.privAll = out;
 }
 function viewSources() {
-  if (!S.privAll) { $app.innerHTML = shell(`<div class="spin">Loading…</div>`, "sources"); loadPrivAll().then(() => { if (S.route === "#/sources") viewSources(); }); return; }
   const by = {};
-  [...S.cands.values()].filter((c) => !c.archived).forEach((c) => { const s = (S.privAll[c.id] || {}).source || "Not recorded"; (by[s] = by[s] || []).push(c); });
+  [...S.cands.values()].filter((c) => !c.archived).forEach((c) => { const s = sourceOf(c); (by[s] = by[s] || []).push(c); });
   const keys = Object.keys(by).sort((a, b) => (a === "Not recorded") - (b === "Not recorded") || by[b].length - by[a].length);
-  const past = (c) => STAGES.indexOf(stageOf(c)) >= 1 && STAGES.indexOf(stageOf(c)) <= 6;
+  const past = (c) => STAGES.indexOf(stageOf(c)) >= 1 && !SIDE.includes(stageOf(c));
   $app.innerHTML = shell(`
-    <div class="ph"><h2>Sources</h2><span class="tag mute">Only you see this</span></div>
-    <p class="hint" style="margin-top:-6px">Where each biodata came from. Set it on a profile under "Only you see this › Came from".</p>
+    <div class="ph"><h2>Sources</h2></div>
+    <p class="hint" style="margin-top:-6px">Where each biodata came from. Set it on a profile under Edit › "Biodata came from".</p>
     ${keys.length ? keys.map((k) => `<details class="grp" data-src="${esc(k)}" ${S.open.has("src:" + k) ? "open" : ""}>
       <summary><span class="dot"></span>${esc(k)}<span class="n">${by[k].length}</span><span class="sp"></span>
         <span class="hint">${by[k].filter(past).length} moved ahead</span><span class="car"></span></summary>
@@ -733,6 +786,9 @@ function viewEdit(id) {
       ${FIELDS.slice(0, 3).map(fieldHtml(c)).join("")}
       <label class="f"><span>Height</span>${heightSelects(c.heightIn)}</label>
       ${FIELDS.slice(3).map(fieldHtml(c)).join("")}
+      <label class="f"><span>Biodata came from</span><input class="in-t" name="source" list="src-list" value="${esc(c.source)}" placeholder="Pratima Ben, Bina Ben, matrimonial site…"></label>
+      <datalist id="src-list">${sourceList().map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
+      <div class="f"><span class="lbl">Languages</span><div class="seg multi">${LANGS.map((l) => `<label class="${langsOf(c).includes(l) ? "on" : ""}"><input type="checkbox" name="lang" value="${l}" ${langsOf(c).includes(l) ? "checked" : ""}>${l}</label>`).join("")}</div></div>
       <label class="f"><span>About</span><textarea class="in-t" name="about">${esc(c.about)}</textarea></label>
       <label class="f"><span>Biodata PDF (Google Drive link)</span><input class="in-t" name="pdfUrl" type="url" inputmode="url" placeholder="https://drive.google.com/file/d/…" value="${esc(c.pdfUrl)}"></label>
       <div class="err" id="err"></div>
@@ -740,6 +796,7 @@ function viewEdit(id) {
       ${id ? `<button class="btn danger wide" type="button" data-act="delete" style="margin-top:12px">Delete for good</button>` : ""}
     </form>`, "list");
   const f = document.getElementById("f-edit");
+  f.querySelectorAll(".seg.multi input").forEach((i) => (i.onchange = () => i.closest("label").classList.toggle("on", i.checked)));
   f.photo.onchange = async () => { const file = f.photo.files[0]; if (!file) return; photo = await resizePhoto(file); document.getElementById("pv").innerHTML = `<img src="${photo}" alt="">`; };
   $app.querySelector('[data-act="nophoto"]')?.addEventListener("click", () => { photo = ""; document.getElementById("pv").textContent = "+"; });
   f.onsubmit = async (e) => {
@@ -748,6 +805,8 @@ function viewEdit(id) {
     FIELDS.forEach(([k, , t]) => { const v = f[k].value.trim(); data[k] = t === "number" ? (v ? +v : null) : v; });
     data.stage = f.stage.value; data.about = f.about.value.trim(); data.photo = photo;
     data.pdfUrl = f.pdfUrl.value.trim();
+    data.source = f.source.value.trim().slice(0, 80);
+    data.languages = [...f.querySelectorAll('input[name="lang"]:checked')].map((x) => x.value);
     if (data.pdfUrl && !isDrive(data.pdfUrl)) { document.getElementById("err").textContent = "The PDF link must be a Google Drive link."; return; }
     data.heightIn = f.hft.value ? +f.hft.value * 12 + (+f.hin.value || 0) : null;
     if (!data.name) { document.getElementById("err").textContent = "Name is needed."; return; }
@@ -794,6 +853,7 @@ function normCand(r) {
       city: pick("city", "livesin", "location"), education: pick("education"), work: pick("work", "profession", "occupation"),
       family: pick("family"), marital: pick("marital", "maritalstatus"), diet: pick("diet"), about: pick("about", "notesforfamily"),
       pdfUrl: isDrive(pick("pdfUrl", "pdfurl", "pdf")) ? pick("pdfUrl", "pdfurl", "pdf") : "",
+      source: pick("source", "from"), languages: pick("languages", "language").split(/[,/]/).map((x) => x.trim()).filter((x) => LANGS.includes(x)),
       stage, photo: "", sharedWith: [], viewers: [], hidden: false, archived: false },
     p: { contact: pick("contact", "phone"), source: pick("source", "from"), notes: pick("notes", "privatenotes") },
   };
