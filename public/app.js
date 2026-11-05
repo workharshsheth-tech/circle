@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 1
+// Circle · family review for Harsh. BUILD 2
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "1";
+export const BUILD = "2";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -28,7 +28,7 @@ const $app = document.getElementById("app");
 // ---------- state ----------
 const S = {
   user: null, me: null, owner: false,
-  cands: new Map(), members: [], harsh: null, summaries: new Map(),
+  cands: new Map(), members: [], harsh: null, settings: {}, summaries: new Map(),
   filters: { stage: "", height: "", community: "", city: "", q: "", archived: false },
   open: new Set(), unsubs: [], detailUnsubs: [], route: "",
 };
@@ -69,7 +69,11 @@ export function parseHeight(v) {
   return null;
 }
 const star = (on) => `<svg viewBox="0 0 24 24" class="s ${on ? "on" : ""}"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/></svg>`;
-const mark = (size = 26) => `<svg width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="16" r="8.5" fill="none" stroke="#1f45d6" stroke-width="3"/><circle cx="20" cy="16" r="8.5" fill="none" stroke="#1f45d6" stroke-width="3" opacity=".55"/></svg>`;
+const mark = (size = 28) => `<svg width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 30V15c0-6 5-9 11-13 6 4 11 7 11 13v15" fill="none" stroke="#1c3fae" stroke-width="3.2" stroke-linejoin="round"/><path d="M11 30V19c0-3 2.5-5 5-6.5 2.5 1.5 5 3.5 5 6.5v11" fill="none" stroke="#1c3fae" stroke-width="2.4" stroke-linejoin="round" opacity=".55"/><circle cx="16" cy="7.5" r="3" fill="#f5a300"/></svg>`;
+const TORAN = `<div class="toran" aria-hidden="true"></div>`;
+// Drive links: accept any Drive share link, keep only Google's own hosts.
+function driveId(u) { const m = String(u || "").match(/(?:\/d\/|[?&]id=)([\w-]{20,})/); return m ? m[1] : null; }
+function isDrive(u) { try { return /(^|\.)(drive|docs)\.google\.com$/.test(new URL(u).hostname); } catch { return false; } }
 function toast(msg) {
   const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
   document.body.appendChild(t); setTimeout(() => t.remove(), 2400);
@@ -91,12 +95,12 @@ async function finishLinkSignIn(email) {
 function renderSignIn(stage = "ask", info = {}) {
   const linkFlow = stage === "confirm";
   $app.innerHTML = `
-  <div class="auth"><div class="card">
-    ${mark(40)}
+  <div class="auth">${TORAN}<div class="card">
+    ${mark(44)}
     <h1>${linkFlow ? "Confirm your email" : "Circle"}</h1>
     <p>${linkFlow ? "Type the email you asked the sign-in link for." :
       stage === "sent" ? `We sent a sign-in link to <b>${esc(info.email)}</b>. Open it on this phone.` :
-      "Harsh's family review. Only people Harsh has invited can sign in."}</p>
+      "Harsh's rishta review with family. Only people Harsh has invited can sign in."}</p>
     ${stage === "sent" ? `<button class="btn ghost wide" data-act="again">Use a different email</button>` : `
     <form id="f-signin">
       <label class="f"><span>Email</span><input class="in-t" type="email" name="email" required autocomplete="email" inputmode="email" value="${esc(info.email || "")}"></label>
@@ -128,7 +132,7 @@ function niceErr(e) {
 }
 
 function renderNotInvited() {
-  $app.innerHTML = `<div class="auth"><div class="card">${mark(40)}
+  $app.innerHTML = `<div class="auth">${TORAN}<div class="card">${mark(44)}
     <h1>Not on the list yet</h1>
     <p><b>${esc(S.user.email)}</b> hasn't been invited. Ask Harsh to add this email, then open the link again.</p>
     <button class="btn ghost wide" data-act="signout">Sign out</button></div></div>`;
@@ -151,6 +155,7 @@ async function startData() {
     S.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     rerenderSoft();
   }));
+  S.unsubs.push(onSnapshot(doc(db, "reference", "settings"), (d) => { S.settings = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
   S.unsubs.push(onSnapshot(doc(db, "reference", "harsh"), (d) => { S.harsh = d.exists() ? d.data() : null; if (S.route.startsWith("#/harsh")) rerenderSoft(); }, () => {}));
 }
 
@@ -186,7 +191,7 @@ async function loadSummaries() {
 function shell(inner, tab) {
   const tabs = [["#/", "Profiles", "list"], ...(S.owner ? [["#/people", "Family", "people"]] : []), ["#/harsh", "Harsh's biodata", "harsh"]];
   return `
-  <header class="top">
+  <header class="top">${TORAN}
     <div class="in"><a class="brand" href="#/">${mark()}<span>Circle</span></a><span class="sp"></span>
       <span class="who">${esc(myName())}</span><button class="btn plain sm" data-act="signout">Sign out</button></div>
     <nav class="tabs">${tabs.map(([h, l, k]) => `<a href="${h}" class="${tab === k ? "on" : ""}">${l}</a>`).join("")}</nav>
@@ -259,6 +264,7 @@ function viewList() {
   $app.innerHTML = shell(`
     <div class="ph"><h2>${S.owner ? "Profiles" : "Profiles Harsh shared"}</h2>
       ${S.owner ? `<a class="btn ghost sm" href="#/import">Import</a>` : ""}</div>
+    ${isDrive(S.settings.driveFolder) ? `<div class="links"><a href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">All biodata PDFs in Drive ↗</a></div>` : ""}
     <input class="search" type="search" placeholder="Search name, city, work" value="${esc(f.q)}" data-filter="q">
     <div class="filters">
       ${selChip("stage", "Stage", STAGES)}
@@ -293,7 +299,7 @@ function viewDetail(id, soft) {
   drawDetail(c);
 }
 function subscribeDetail(id) {
-  stopDetail(); Object.assign(D, { id, reviews: null, mine: null, comments: [], editing: null, priv: null });
+  stopDetail(); Object.assign(D, { id, reviews: null, mine: null, comments: [], editing: null, priv: null, pdfOpen: false });
   const email = lc(S.user.email);
   S.detailUnsubs.push(onSnapshot(query(collection(db, "candidates", id, "comments"), orderBy("createdAt")), (snap) => {
     D.comments = snap.docs.map((d) => ({ id: d.id, ...d.data() })); redrawDetail();
@@ -346,6 +352,8 @@ function drawDetail(c) {
       <button class="btn ghost sm" data-act="archive">${c.archived ? "Restore" : "Archive"}</button>
     </div>` : ""}
 
+    ${isDrive(c.pdfUrl) ? `<a class="pdf" href="${esc(c.pdfUrl)}" target="_blank" rel="noopener" data-act="pdf"><span class="ic">PDF</span><span class="sp">Biodata PDF</span><span class="go">${D.pdfOpen ? "Close" : "View"}</span></a>
+      ${D.pdfOpen && driveId(c.pdfUrl) ? `<iframe class="pdf-frame" src="https://drive.google.com/file/d/${driveId(c.pdfUrl)}/preview" title="Biodata PDF"></iframe>` : ""}` : ""}
     <section class="card">
       <h3>Biodata</h3>
       ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : `<div class="hint">No details yet.</div>`}
@@ -426,6 +434,10 @@ function bindDetail(c) {
     if (!confirm("Delete this comment?")) return;
     try { await deleteDoc(doc(db, "candidates", id, "comments", b.dataset.delCm)); } catch (err) { toast(niceErr(err)); }
   }));
+  $app.querySelector('[data-act="pdf"]')?.addEventListener("click", (e) => {
+    if (!driveId(c.pdfUrl) || e.metaKey || e.ctrlKey) return; // plain link if it isn't a file link
+    e.preventDefault(); D.pdfOpen = !D.pdfOpen; drawDetail(c);
+  });
   $app.querySelector('[data-act="zoom"]')?.addEventListener("click", () => {
     const lb = document.createElement("div"); lb.className = "lightbox"; lb.innerHTML = `<img src="${c.photo}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb);
   });
@@ -487,6 +499,7 @@ function viewEdit(id) {
       <label class="f"><span>Height</span>${heightSelects(c.heightIn)}</label>
       ${FIELDS.slice(3).map(fieldHtml(c)).join("")}
       <label class="f"><span>About</span><textarea class="in-t" name="about">${esc(c.about)}</textarea></label>
+      <label class="f"><span>Biodata PDF (Google Drive link)</span><input class="in-t" name="pdfUrl" type="url" inputmode="url" placeholder="https://drive.google.com/file/d/…" value="${esc(c.pdfUrl)}"></label>
       <div class="err" id="err"></div>
       <button class="btn wide" type="submit">${id ? "Save" : "Add profile"}</button>
       ${id ? `<button class="btn danger wide" type="button" data-act="delete" style="margin-top:12px">Delete for good</button>` : ""}
@@ -499,6 +512,8 @@ function viewEdit(id) {
     const data = {};
     FIELDS.forEach(([k, , t]) => { const v = f[k].value.trim(); data[k] = t === "number" ? (v ? +v : null) : v; });
     data.stage = f.stage.value; data.about = f.about.value.trim(); data.photo = photo;
+    data.pdfUrl = f.pdfUrl.value.trim();
+    if (data.pdfUrl && !isDrive(data.pdfUrl)) { document.getElementById("err").textContent = "The PDF link must be a Google Drive link."; return; }
     data.heightIn = f.hft.value ? +f.hft.value * 12 + (+f.hin.value || 0) : null;
     if (!data.name) { document.getElementById("err").textContent = "Name is needed."; return; }
     try {
@@ -543,6 +558,7 @@ function normCand(r) {
       heightIn: parseHeight(r.heightIn ?? r.heightin ?? r.height), community: pick("community", "caste"), native: pick("native", "nativeplace"),
       city: pick("city", "livesin", "location"), education: pick("education"), work: pick("work", "profession", "occupation"),
       family: pick("family"), marital: pick("marital", "maritalstatus"), diet: pick("diet"), about: pick("about", "notesforfamily"),
+      pdfUrl: isDrive(pick("pdfUrl", "pdfurl", "pdf")) ? pick("pdfUrl", "pdfurl", "pdf") : "",
       stage, photo: "", sharedWith: [], viewers: [], hidden: false, archived: false },
     p: { contact: pick("contact", "phone"), source: pick("source", "from"), notes: pick("notes", "privatenotes") },
   };
@@ -551,7 +567,7 @@ function viewImport() {
   $app.innerHTML = shell(`
     <a class="back" href="#/">‹ Profiles</a>
     <div class="ph"><h2>Import profiles</h2></div>
-    <p class="hint">Paste CSV with a header row, or JSON. Columns: name, dob, age, height (5'4" or 163 cm), community, native, city, education, work, family, marital, diet, about, stage. Private columns (only you see): contact, source, notes. New profiles are shared with no one until you choose.</p>
+    <p class="hint">Paste CSV with a header row, or JSON. Columns: name, dob, age, height (5'4" or 163 cm), community, native, city, education, work, family, marital, diet, about, stage, pdf (Drive link). Private columns (only you see): contact, source, notes. New profiles are shared with no one until you choose.</p>
     <label class="f"><textarea class="in-t" name="data" style="min-height:220px;font-family:ui-monospace,monospace;font-size:13px" placeholder="name,height,city,community,stage"></textarea></label>
     <label class="btn ghost sm">Choose a file<input type="file" accept=".csv,.json,text/csv,application/json" hidden name="file"></label>
     <div class="err" id="err"></div><div class="hint" id="pre"></div>
@@ -597,6 +613,11 @@ function viewPeople() {
       <label class="f"><span>Email</span><input class="in-t" name="email" type="email" required inputmode="email"></label></div>
       <button class="btn" type="submit">Add</button><div class="err" id="err"></div>
     </form>
+    <form id="f-drive" class="card">
+      <label class="f" style="margin-bottom:8px"><span>Drive folder with the biodata PDFs</span><input class="in-t" name="folder" type="url" inputmode="url" placeholder="https://drive.google.com/drive/folders/…" value="${esc(S.settings.driveFolder)}"></label>
+      <div class="hint" style="margin-bottom:10px">Everyone here needs view access to this folder to open the PDFs. In Drive: Share › add their email › Viewer.</div>
+      <button class="btn ghost sm" type="submit">Save folder</button>${isDrive(S.settings.driveFolder) ? ` <a class="btn plain sm" href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">Open in Drive ↗</a>` : ""}
+    </form>
     <section class="card people">
       ${people.length ? people.map((m) => `<div class="p">
         <div class="av">${esc(initials(m.name))}</div>
@@ -614,9 +635,15 @@ function viewPeople() {
     try { await setDoc(doc(db, "members", email), { name, role: "reviewer", active: true, addedAt: serverTimestamp() }); f.reset(); document.activeElement?.blur(); toast(`${name} added`); }
     catch (err) { document.getElementById("err").textContent = niceErr(err); }
   };
+  const fd = document.getElementById("f-drive");
+  fd.onsubmit = async (e) => {
+    e.preventDefault(); const u = fd.folder.value.trim();
+    if (u && !isDrive(u)) { toast("That isn't a Google Drive link."); return; }
+    await setDoc(doc(db, "reference", "settings"), { ...S.settings, driveFolder: u }); document.activeElement?.blur(); toast("Folder saved");
+  };
   $app.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     const m = S.members.find((x) => x.email === b.dataset.copy);
-    const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} and sign in with ${m.email}. You'll get a sign-in link by email.`;
+    const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} and sign in with ${m.email}. You'll get a sign-in link by email.${isDrive(S.settings.driveFolder) ? ` The biodata PDFs are here: ${S.settings.driveFolder}` : ""}`;
     try { await navigator.clipboard.writeText(msg); toast("Invite copied. Send it yourself."); } catch { prompt("Copy this invite:", msg); }
   }));
   $app.querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = () => {

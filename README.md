@@ -40,6 +40,15 @@ Someone not on the list who tries to sign in sees "Not on the list yet" and no d
 - Seed file: `seed/seed.json` (git-ignored, so candidate data never goes into git). It also fills Harsh's biodata.
 - New profiles are shared with no one until Harsh ticks people.
 
+## Biodata PDFs (Google Drive)
+
+- PDFs stay in Harsh's Google Drive; the app only holds the link. Nothing is copied to another server.
+- On a profile: **Edit > Biodata PDF (Google Drive link)**. Family taps **Biodata PDF** to view it inside the app.
+- **Family > Drive folder**: paste the folder link once. Everyone sees a one-line "All biodata PDFs in Drive" link and it goes into the invite message.
+- Drive decides who can open the PDFs, not the app. Share the folder in Drive with each family email as **Viewer**.
+  Keep the folder on "Restricted", not "Anyone with the link".
+- Import also takes a `pdf` column with the Drive link.
+
 ## Set up (one time, about 15 minutes)
 
 1. https://console.firebase.google.com > **Add project** (signed in as work.harshsheth@gmail.com). Analytics off.
