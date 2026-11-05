@@ -1,4 +1,4 @@
-// Circle intake. BUILD 17
+// Circle intake. BUILD 18
 // Runs as Harsh. Three ways a biodata reaches Circle:
 //  1. scanFolder(): every 15 minutes it looks in the Drive folder where the Seema Aunty bot saves biodatas
 //     ("From chat"), reads each new PDF / image, and adds or fills in the profile. No change to the bot needed.
@@ -428,8 +428,8 @@ function photoChoices_(fileId) {
 var BINA_FOLDER = "1WlhAJO4L12Lj8zPqQzC0-IPh9-IVdtkj"; // override with script property BINA_FOLDER_ID if Bina's folder moves
 function binaFolder_() { return prop_("BINA_FOLDER_ID") || BINA_FOLDER; }
 var BINA_LABEL = "Bina · Divorced Brides";
-// Bina's list is filtered, not dumped: born 1990–1998 and height at or under 5′6″. Taller girls are not added.
-var BINA_YEARS = [1990, 1998];
+// Bina's list is filtered, not dumped: born 1988–1998 and height at or under 5′6″. Taller girls are not added.
+var BINA_YEARS = [1988, 1998];
 var BINA_COPY = "1WlhAJO4L12Lj8zPqQzC0-IPh9-IVdtkj"; // Harsh's copy, already height-checked by Bina's filter
 function yearOf_(g, fields) {
   var y = (g.path || []).map(Number).filter(function (n) { return n >= 1900 && n <= 2015; })[0];

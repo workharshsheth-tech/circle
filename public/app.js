@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 16
+// Circle · family review for Harsh. BUILD 18
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "16";
+export const BUILD = "18";
 // Every live update reconnects by itself if the connection drops or a fresh sign-in is still settling,
 // instead of stopping quietly (phones on patchy networks).
 function onSnapshot(ref, next, err) {
@@ -776,11 +776,11 @@ function binaCard() {
   const b = (S.imports || {}).bina || {}, when = b.lastRun?.toDate ? b.lastRun.toDate() : null;
   const ago = when ? Math.round((Date.now() - when) / 864e5) : null;
   const last = b.running ? `Checking now… new girls appear below as they're read${b.created ? ` (${b.created} so far)` : ""}.`
-    : when ? `Last checked ${ago === 0 ? "today" : ago === 1 ? "yesterday" : ago + " days ago"}: ${b.created || 0} new${b.updated ? `, ${b.updated} already here` : ""}${b.skippedTall ? `, ${b.skippedTall} too tall` : ""}${b.skippedOld ? `, ${b.skippedOld} outside 1990–98` : ""}${b.skippedNoHeight ? `, ${b.skippedNoHeight} to check by hand` : ""}.`
+    : when ? `Last checked ${ago === 0 ? "today" : ago === 1 ? "yesterday" : ago + " days ago"}: ${b.created || 0} new${b.updated ? `, ${b.updated} already here` : ""}${b.skippedTall ? `, ${b.skippedTall} too tall` : ""}${b.skippedOld ? `, ${b.skippedOld} outside 1988–98` : ""}${b.skippedNoHeight ? `, ${b.skippedNoHeight} to check by hand` : ""}.`
     : "Not checked from Circle yet.";
   const names = !b.running && b.newNames && b.newNames.length ? `<div class="hint" style="margin-top:6px">New: ${b.newNames.map(esc).join(", ")}</div>` : "";
   return `<section class="card bina"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px"><b>Bina · Divorced Brides</b><div class="hint">Born 1990–98, height up to 5′6″ only. ${esc(last)} Also checked by itself every morning.</div>${names}</div>
+      <div style="flex:1;min-width:200px"><b>Bina · Divorced Brides</b><div class="hint">Born 1988–98, height up to 5′6″ only. ${esc(last)} Also checked by itself every morning.</div>${names}</div>
       <button class="btn sm" data-act="bina-update" ${b.running ? "disabled" : ""}>${b.running ? "Checking…" : "Check Bina's folder"}</button></div></section>`;
 }
 async function updateBina(e) {

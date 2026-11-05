@@ -78,7 +78,7 @@ test("Photo from biodata: only Harsh gets the pictures, best first", async () =>
   assert.equal(first.readUInt16BE(i + 7), 300);
 });
 
-test("Bina batch: filtered (born 1990–98, up to 5′6″), linked not copied, merged by name", async () => {
+test("Bina batch: filtered (born 1988–98, up to 5′6″), linked not copied, merged by name", async () => {
   // Already in Circle from the chat lane, with Harsh's own PDF link (a live file) and the old source label.
   driveFiles.push({ id: "KEEP_ME_000000000000000", name: "Riya.pdf", mimeType: "application/pdf" });
   await create({ name: "Riya Kapadia Two", city: "Pune", stage: "New", pdfUrl: "https://drive.google.com/file/d/KEEP_ME_000000000000000/view", source: "Seema Aunty · From chat" });
@@ -91,8 +91,8 @@ test("Bina batch: filtered (born 1990–98, up to 5′6″), linked not copied, 
     { id: "b4", name: "Riya Kapadia Two - IMG-20260328-WA0060 - Sonal Kapadia.jpg", mimeType: "image/jpeg", text: "Height: 5'2\"" },
     { id: "b5", name: "Old Year Girl - biodata.pdf", mimeType: "application/pdf", text: "Height: 5'1\"" });
   Object.assign(driveFolders, {
-    bina: { name: "From Bina", files: [], folders: ["y88", "y91", "y93"] },
-    y88: { name: "1988", files: ["b5"] }, y91: { name: "1991", files: ["b1", "b2"] }, y93: { name: "1993", files: ["b3", "b4"] } });
+    bina: { name: "From Bina", files: [], folders: ["y86", "y91", "y93"] },
+    y86: { name: "1986", files: ["b5"] }, y91: { name: "1991", files: ["b1", "b2"] }, y93: { name: "1993", files: ["b3", "b4"] } });
   const savedBefore = saved.length;
   run("(BINA_FOLDER = 'bina', importBina)"); // point the batch at the fake folder tree
   const all2 = await all(), by = (n) => all2.find((c) => c.name === n);
@@ -101,7 +101,7 @@ test("Bina batch: filtered (born 1990–98, up to 5′6″), linked not copied, 
   assert.match(k.pdfUrl, /\/d\/b1\//); assert.equal(k.source, "Bina · Divorced Brides"); assert.equal(k.heightIn, "64");
   assert.equal(k.dob, "1991-03-12"); assert.equal(k.birthPlace, "Rajkot"); assert.equal(k.marital, "Divorced"); assert.equal(k.stage, "New");
   assert.equal(by("Tara Vyas"), undefined, "too tall: not added");
-  assert.equal(by("Old Year Girl"), undefined, "born 1988: not added");
+  assert.equal(by("Old Year Girl"), undefined, "born 1986: not added");
   assert.equal(by("Heena Doshi"), undefined, "height unreadable outside Harsh's checked copy: flagged, not added");
   const riya = all2.filter((c) => c.name === "Riya Kapadia Two");
   assert.equal(riya.length, 1); assert.match(riya[0].pdfUrl, /KEEP_ME/); assert.equal(riya[0].city, "Pune");
@@ -117,7 +117,7 @@ test("Bina report names what was added, merged and left out, and why", () => {
   assert.equal(rep.created, 1); assert.deepEqual(rep.newNames, ["Kriti Shah"]);
   assert.equal(rep.updated, 1); assert.deepEqual(rep.already, ["Riya Kapadia Two"]);
   assert.match(rep.skipped.tooTall[0], /Tara Vyas \(too tall \(5′8″\)\)/);
-  assert.match(rep.skipped.tooOld[0], /Old Year Girl \(born 1988\)/);
+  assert.match(rep.skipped.tooOld[0], /Old Year Girl \(born 1986\)/);
   assert.match(rep.skipped.noHeight[0], /Heena Doshi/);
   assert.equal(run("importBinaRound").created, 1); // second run: every file already seen
 });
