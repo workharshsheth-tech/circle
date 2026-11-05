@@ -3,7 +3,7 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { P, FS, AU, driveFiles, run, parse, post } from "./gas-harness.mjs";
+import { P, FS, AU, driveFiles, driveFolders, triggers, saved, run, parse, post } from "./gas-harness.mjs";
 
 const all = async () => {
   const r = await (await fetch(`${FS}/v1/projects/${P}/databases/(default)/documents/candidates?pageSize=100`, { headers: { Authorization: "Bearer owner" } })).json();
@@ -38,6 +38,7 @@ test("new girl in the folder becomes a profile in New, with height sorted and ph
   const n = (await all()).find((c) => c.name === "Nisha Patel");
   assert.equal(n.stage, "New"); assert.equal(n.heightIn, "68"); assert.equal(n.dob, "1992-11-14"); assert.equal(n.work, "Architect");
   assert.match(n.pdfUrl, /\/d\/f1\//); assert.match(n.photo, /^data:image\/png;base64,/);
+  assert.equal(n.source, "Seema Aunty");
   assert.equal(n.viewers, undefined === n.viewers ? undefined : n.viewers); // shared with no one
 });
 
@@ -74,4 +75,45 @@ test("Photo from biodata: only Harsh gets the pictures, best first", async () =>
   assert.equal(r.ok, true, JSON.stringify(r).slice(0, 200)); assert.equal(r.photos.length, 3);
   const first = Buffer.from(r.photos[0].split(",")[1], "base64"), i = first.indexOf(Buffer.from([0xff, 0xc0]));
   assert.equal(first.readUInt16BE(i + 7), 300);
+});
+
+test("Bina batch: year folders, linked not copied, merged by name, report counts", async () => {
+  // Already in Circle from the chat lane, with Harsh's own PDF link and the old source label.
+  await create({ name: "Riya Kapadia Two", city: "Pune", stage: "New", pdfUrl: "https://drive.google.com/file/d/KEEP_ME_000000000000000/view", source: "Seema Aunty · From chat" });
+  driveFiles.push(
+    { id: "b1", name: "Kriti Shah - My Biodata (2).pdf", mimeType: "application/pdf", text: "Name: Kriti Shah\nHeight : 5'4\"\nCaste: Jain\nDate of Birth: 12/03/1991" },
+    { id: "b2", name: "Heena Doshi - photo_2023-09-15_14-59-36.jpg", mimeType: "image/jpeg", text: "Heena Doshi\nEducation: B.Com" },
+    { id: "b3", name: "Tara Vyas - Tara biodata - Mina Vyas.pdf", mimeType: "application/pdf", text: "Height: 5 ft 8 in" },
+    { id: "b4", name: "Riya Kapadia Two - IMG-20260328-WA0060 - Sonal Kapadia.jpg", mimeType: "image/jpeg", text: "Height: 5'2\"" });
+  Object.assign(driveFolders, {
+    bina: { name: "From Bina", files: [], folders: ["y91", "y93"] },
+    y91: { name: "1991", files: ["b1", "b2"] }, y93: { name: "1993", files: ["b3", "b4"] } });
+  const savedBefore = saved.length;
+  run("(BINA_FOLDER = 'bina', importBina)"); // point the batch at the fake folder tree
+  const all2 = await all(), by = (n) => all2.find((c) => c.name === n);
+  // linked to the same Drive files; nothing written to Drive
+  assert.equal(saved.length, savedBefore);
+  assert.match(by("Kriti Shah").pdfUrl, /\/d\/b1\//); assert.equal(by("Kriti Shah").source, "Bina · Divorced Brides");
+  assert.equal(by("Kriti Shah").heightIn, "64"); assert.equal(by("Kriti Shah").dob, "1991-03-12"); assert.equal(by("Kriti Shah").marital, "Divorced");
+  // a lone image is her biodata: linked, not used as her photo; age from the year folder
+  assert.match(by("Heena Doshi").pdfUrl, /\/d\/b2\//); assert.ok(!by("Heena Doshi").photo);
+  assert.equal(by("Heena Doshi").age, String(new Date().getFullYear() - 1991));
+  // taller girls are still created, as height fail
+  assert.equal(by("Tara Vyas").heightIn, "68"); assert.equal(by("Tara Vyas").stage, "New");
+  // same girl as before: only empty fields filled; her existing PDF link and city kept; old source label tidied
+  const riya = all2.filter((c) => c.name === "Riya Kapadia Two");
+  assert.equal(riya.length, 1); assert.match(riya[0].pdfUrl, /KEEP_ME/); assert.equal(riya[0].city, "Pune");
+  assert.equal(riya[0].heightIn, "62"); assert.equal(riya[0].source, "Seema Aunty");
+  // report and the family's "All biodata PDFs" link
+  const settings = await (await fetch(`${FS}/v1/projects/${P}/databases/(default)/documents/reference/settings`, { headers: { Authorization: "Bearer owner" } })).json();
+  assert.match(settings.fields.driveFolder.stringValue, /13AhRjQVi2val9F5fq55C7HK2aZnyC3WT/);
+  assert.equal(triggers.filter((x) => x.getHandlerFunction() === "importBinaRound").length, 0); // finished, no next round
+});
+
+test("Bina batch report: 3 created, 1 updated, 1 height fail; a second run does nothing", () => {
+  const rep = JSON.parse(run("(function(){ return PropertiesService.getScriptProperties().getProperty('BINA_REPORT'); })"));
+  assert.equal(rep.created, 3); assert.equal(rep.updated, 1); assert.equal(rep.fail, 1); assert.deepEqual(rep.failed, ["Tara Vyas"]);
+  assert.equal(rep.remaining, 0);
+  const again = run("importBinaRound");
+  assert.equal(again.created, 3); // unchanged: every file already seen
 });

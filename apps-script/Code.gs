@@ -1,15 +1,19 @@
-// Circle intake. BUILD 11
+// Circle intake. BUILD 13
 // Runs as Harsh. Three ways a biodata reaches Circle:
 //  1. scanFolder(): every 15 minutes it looks in the Drive folder where the Seema Aunty bot saves biodatas
 //     ("From chat"), reads each new PDF / image, and adds or fills in the profile. No change to the bot needed.
 //  2. Circle's "Upload PDF" button (web app, checked against Harsh's own sign-in).
 //  3. Optional: the bot posts directly with BOT_SECRET (see docs/seema-bot.md).
+//  4. importBina(): one-time batch of Bina's "Divorced Brides 1990-1998" folder (year subfolders). It runs in
+//     5-minute rounds by itself until every file is in Circle, then stops. binaReport() prints the counts.
+// All lanes link each profile to the existing Drive file (no copies), remember every file id (seen:<id>), and
+// merge by name: same girl → only empty fields are filled, never Harsh's edits.
 // First time: run setupCheck(), then installTrigger(), from the Run menu.
 //
 // Script properties (Project settings > Script properties), never in code or chat:
 //   PROJECT_ID     Firebase project id
 //   API_KEY        Firebase web apiKey (public; used only to check Harsh's sign-in)
-//   FOLDER_ID      Drive folder id for the PDFs
+//   FOLDER_ID      Drive folder id of "From chat" (the live lane; Seema Aunty saves new biodatas only here)
 //   BOT_SECRET     optional; only if the bot should post directly. At least 24 random characters
 //   OWNER_EMAIL    work.harshsheth@gmail.com
 //   FIRESTORE_BASE, IDTK_BASE (tests only) overrides for the Firestore and sign-in check addresses
@@ -74,18 +78,21 @@ function intake_(body, who) {
   if (!c.name) c.name = file && file.name ? nameFromFile_(file.name) : "";
   if (!c.name) throw new Error("no name and no file");
 
-  var source = { bot: "Seema Aunty", folder: "Seema Aunty · From chat", harsh: "Uploaded in Circle" }[who] || who;
+  var source = body.sourceLabel || { bot: "Seema Aunty", folder: "Seema Aunty", harsh: "Uploaded in Circle" }[who] || who;
   c.source = source;
   // 2. Same name already in Circle? Fill in what's missing and attach the PDF; never overwrite Harsh's edits.
   var existing = findByName_(c.name);
-  var heightFit = c.heightIn ? (c.heightIn <= HARSH_HEIGHT_IN ? "pass" : "fail") : "unknown";
+  var fit = function (h) { return h ? (h <= HARSH_HEIGHT_IN ? "pass" : "fail") : "unknown"; };
+  var heightFit = fit(c.heightIn || (existing && existing.data.heightIn));
   if (existing) {
     var patch = {};
     Object.keys(c).forEach(function (k) { if (existing.data[k] == null || existing.data[k] === "") patch[k] = c[k]; });
-    if (c.pdfUrl) patch.pdfUrl = c.pdfUrl;
+    // A PDF Harsh uploads himself replaces the link; from folders and the bot it only fills an empty one.
+    if (c.pdfUrl && who === "harsh") patch.pdfUrl = c.pdfUrl;
     patch.updatedAt = new Date();
     fsPatch_("candidates/" + existing.id, patch);
-    return { ok: true, id: existing.id, updated: true, name: existing.data.name, heightFit: heightFit, filled: Object.keys(patch) };
+    return { ok: true, id: existing.id, updated: true, name: existing.data.name, heightFit: heightFit,
+      filled: Object.keys(patch).filter(function (k) { return k !== "updatedAt"; }) };
   }
 
   // 3. New profile: stage New, shared with no one until Harsh ticks people.
@@ -105,7 +112,10 @@ function saveToFolder_(blob) {
   return { id: f.getId(), name: f.getName() };
 }
 function nameFromFile_(n) {
-  return String(n).replace(/\.[a-z0-9]+$/i, "").replace(/[_\-]+/g, " ")
+  n = String(n).replace(/\.[a-z0-9]+$/i, "");
+  // Form uploads are named "Girl's name - original file name - who sent it": the girl's name comes first.
+  if (/ - /.test(n)) n = n.split(" - ")[0];
+  return n.replace(/[_\-]+/g, " ")
     .replace(/\b(bio ?data|biodata|resume|profile|pdf|final|new|joint|photo|photos|pic|pics|scan|\d{4}|\(\d+\))\b/ig, " ").replace(/\s+/g, " ").trim();
 }
 function parseHeight_(v) {
@@ -140,7 +150,7 @@ function fsPatch_(path, obj) {
 }
 function findByName_(name) {
   var all = fsFetch_(":runQuery", { method: "post", payload: JSON.stringify({ structuredQuery: {
-    from: [{ collectionId: "candidates" }], select: { fields: [{ fieldPath: "name" }].concat(TEXT_FIELDS.concat(["heightIn", "pdfUrl", "age"]).map(function (k) { return { fieldPath: k }; })) } } }) });
+    from: [{ collectionId: "candidates" }], select: { fields: [{ fieldPath: "name" }].concat(TEXT_FIELDS.concat(["heightIn", "pdfUrl", "age", "source"]).map(function (k) { return { fieldPath: k }; })) } } }) });
   var key = normName_(name);
   for (var i = 0; i < all.length; i++) {
     var d = all[i].document; if (!d) continue;
@@ -177,43 +187,66 @@ function fromFs_(fields) {
 // ===================== Folder watcher: the Seema Aunty bot's "From chat" folder =====================
 var MAX_PER_RUN = 6; // stay well inside Apps Script's 6-minute limit
 
+// The live lane: "From chat", every 15 minutes.
 function scanFolder() {
+  return scanLane_({ folderId: prop_("FOLDER_ID"), source: "Seema Aunty", recurse: false, maxGroups: MAX_PER_RUN });
+}
+
+// Walk a folder (and its subfolders if asked), group files per girl, and send each new group to intake.
+// Stops early when the time budget is used, so a big folder is done over several runs.
+function scanLane_(o) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return { skipped: "already running" };
+  var t0 = Date.now(), budget = o.budgetMs || 270000;
   try {
     var props = PropertiesService.getScriptProperties();
     var owner = normName_(prop_("OWNER_NAME") || "Harsh Sheth");
-    var groups = {}, it = DriveApp.getFolderById(prop_("FOLDER_ID")).getFiles();
-    while (it.hasNext()) {
-      var f = it.next(), mt = f.getMimeType();
-      if (!/^application\/pdf$|^image\//.test(mt)) continue;
-      var name = nameFromFile_(f.getName()), key = normName_(name);
-      if (!key || key === owner) continue;
-      (groups[key] = groups[key] || { name: name, files: [] }).files.push(f);
-    }
-    var done = [], keys = Object.keys(groups);
-    for (var i = 0; i < keys.length && done.length < MAX_PER_RUN; i++) {
+    var groups = {};
+    var walk = function (folder, path) {
+      var it = folder.getFiles();
+      while (it.hasNext()) {
+        var f = it.next(), mt = f.getMimeType();
+        if (!/^application\/pdf$|^image\//.test(mt)) continue;
+        var name = nameFromFile_(f.getName()), key = normName_(name);
+        if (!key || key === owner) continue;
+        (groups[key] = groups[key] || { name: name, files: [], path: path }).files.push(f);
+      }
+      if (o.recurse && folder.getFolders) {
+        var sub = folder.getFolders();
+        while (sub.hasNext()) { var s = sub.next(); walk(s, path.concat([s.getName()])); }
+      }
+    };
+    walk(DriveApp.getFolderById(o.folderId), []);
+    var done = [], left = 0, already = 0, keys = Object.keys(groups);
+    for (var i = 0; i < keys.length; i++) {
       var g = groups[keys[i]];
       var fresh = g.files.filter(function (f) { return !props.getProperty("seen:" + f.getId()); });
-      if (!fresh.length) continue;
-      done.push(intakeGroup_(g));
-      g.files.forEach(function (f) { props.setProperty("seen:" + f.getId(), "1"); });
+      if (!fresh.length) { already++; continue; }
+      if ((o.maxGroups && done.length >= o.maxGroups) || Date.now() - t0 > budget) { left++; continue; }
+      var r;
+      try { r = intakeGroup_(g, o); } catch (e) { r = { name: g.name, error: String(e && e.message || e) }; }
+      done.push(r);
+      if (!r.error) g.files.forEach(function (f) { props.setProperty("seen:" + f.getId(), "1"); });
     }
-    console.log("scanFolder: " + JSON.stringify(done));
-    return { ok: true, processed: done };
+    console.log("scan " + (o.source || "") + ": " + JSON.stringify(done));
+    return { ok: true, processed: done, remaining: left, alreadyDone: already, total: keys.length };
   } finally { lock.releaseLock(); }
 }
 
 // One girl's files: the biodata (PDF first, else an image that isn't just a photo) and a photo if there is one.
-function intakeGroup_(g) {
+function intakeGroup_(g, o) {
+  o = o || {};
   var isPhoto = function (f) { return /photo|pic|img|dp/i.test(f.getName()) && /^image\//.test(f.getMimeType()); };
   var doc = g.files.filter(function (f) { return f.getMimeType() === "application/pdf"; })[0]
          || g.files.filter(function (f) { return !isPhoto(f); })[0] || g.files[0];
-  var photo = g.files.filter(isPhoto)[0];
-  var fields = {};
+  // A lone image is her biodata, not a portrait: don't use the whole page as her photo.
+  var photo = g.files.filter(function (f) { return f !== doc && isPhoto(f); })[0];
+  var fields = {}, ocrMiss = false;
   try { fields = parseBiodata_(ocrText_(doc)); } catch (e) { console.warn("could not read " + doc.getName() + ": " + e); }
+  ocrMiss = !Object.keys(fields).some(function (k) { return k !== "name"; });
   fields.name = fields.name && normName_(fields.name) === normName_(g.name) ? fields.name : g.name;
-  var r = intake_({ driveFileId: doc.getId(), fields: fields, source: doc.getName() }, "folder");
+  if (o.defaults) o.defaults(fields, g);
+  var r = intake_({ driveFileId: doc.getId(), fields: fields, source: (g.path || []).concat([doc.getName()]).join(" / "), sourceLabel: o.source }, "folder");
   if (r.ok) {
     var cur = fsFetch_("/candidates/" + r.id, { method: "get" });
     var has = cur.fields && cur.fields.photo && cur.fields.photo.stringValue;
@@ -228,7 +261,7 @@ function intakeGroup_(g) {
       if (url) fsPatch_("candidates/" + r.id, { photo: url });
     }
   }
-  return { name: r.name, id: r.id, created: !!r.created, heightFit: r.heightFit };
+  return { name: r.name, id: r.id, created: !!r.created, heightFit: r.heightFit, ocrMiss: ocrMiss };
 }
 
 // Text of a PDF or image, via Google Drive's own text recognition. The temporary Google Doc is deleted right away.
@@ -350,4 +383,51 @@ function photoChoices_(fileId) {
     .sort(function (a, b) { return photoScore_(b) - photoScore_(a); }).slice(0, 8)
     .map(function (p) { return { bytes: p.bytes, type: "image/jpeg" }; });
   return { ok: true, photos: list.map(function (p) { return "data:" + p.type + ";base64," + Utilities.base64Encode(p.bytes); }) };
+}
+
+// ===================== One-time batch: Bina's "Divorced Brides 1990-1998" =====================
+// Already on Drive in year folders (1990 … 1996). Nothing is copied or moved: profiles link to those files.
+var BINA_FOLDER = "1WlhAJO4L12Lj8zPqQzC0-IPh9-IVdtkj";
+var BINA_LABEL = "Bina · Divorced Brides";
+var PARENT_FOLDER_URL = "https://drive.google.com/drive/folders/13AhRjQVi2val9F5fq55C7HK2aZnyC3WT";
+
+// Run this once. It keeps going in 5-minute rounds by itself until every file is in, then stops.
+function importBina() {
+  tidySources_();
+  fsPatch_("reference/settings", { driveFolder: PARENT_FOLDER_URL });
+  return importBinaRound();
+}
+function importBinaRound() {
+  var r = scanLane_({ folderId: BINA_FOLDER, source: BINA_LABEL, recurse: true, budgetMs: 270000, defaults: binaDefaults_ });
+  if (r.skipped) return r;
+  var props = PropertiesService.getScriptProperties();
+  var rep = JSON.parse(props.getProperty("BINA_REPORT") || '{"created":0,"updated":0,"failed":[],"pass":0,"fail":0,"unknown":0,"ocrMiss":[],"errors":[]}');
+  r.processed.forEach(function (x) {
+    if (x.error) { rep.errors.push(x.name + ": " + x.error); return; }
+    x.created ? rep.created++ : rep.updated++;
+    rep[x.heightFit] = (rep[x.heightFit] || 0) + 1;
+    if (x.heightFit === "fail") rep.failed.push(x.name);
+    if (x.ocrMiss) rep.ocrMiss.push(x.name);
+  });
+  rep.total = r.total; rep.remaining = r.remaining;
+  props.setProperty("BINA_REPORT", JSON.stringify(rep));
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "importBinaRound") ScriptApp.deleteTrigger(t); });
+  if (r.remaining > 0) ScriptApp.newTrigger("importBinaRound").timeBased().after(60 * 1000).create();
+  console.log((r.remaining ? "Round done, " + r.remaining + " girls left; next round starts in 1 minute. " : "Bina batch finished. ") + JSON.stringify(rep));
+  return rep;
+}
+// The year folder is her birth year; everyone on this list is divorced. Only used when her biodata doesn't say.
+function binaDefaults_(fields, g) {
+  var yr = (g.path || []).map(Number).filter(function (y) { return y >= 1950 && y <= 2010; })[0];
+  if (!fields.dob && !fields.age && yr) fields.age = new Date().getFullYear() - yr;
+  if (!fields.marital) fields.marital = "Divorced";
+}
+function binaReport() {
+  console.log(PropertiesService.getScriptProperties().getProperty("BINA_REPORT") || "Not run yet.");
+}
+// Older imports said "Seema Aunty · From chat"; one name per source keeps the Sources tab and filter clean.
+function tidySources_() {
+  var all = fsFetch_(":runQuery", { method: "post", payload: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: "candidates" }], where: { fieldFilter: { field: { fieldPath: "source" }, op: "EQUAL", value: { stringValue: "Seema Aunty · From chat" } } } } }) });
+  all.forEach(function (x) { if (x.document) fsPatch_("candidates/" + x.document.name.split("/").pop(), { source: "Seema Aunty" }); });
 }

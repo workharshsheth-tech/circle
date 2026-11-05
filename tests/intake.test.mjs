@@ -34,13 +34,13 @@ test("bot sends a PDF with fields: profile is created, filed, and sorted", async
   const p = (await getDoc(`candidates/${r.id}/private/notes`)).fields;
   assert.match(p.source.stringValue, /Seema Aunty/); assert.equal(d.source.stringValue, "Seema Aunty"); assert.equal(p.contact.stringValue, "Father 98xxxxxx");
 });
-test("same name again fills gaps only and attaches the new PDF", async () => {
+test("same name again fills gaps only; the bot never replaces an existing PDF link", async () => {
   const r = post({ secret: SECRET, file: { name: "shivani-v2.pdf", base64: PDF }, fields: { name: "shivani malik", city: "Mumbai", education: "MBA" } });
   assert.equal(r.updated, true);
   const d = (await getDoc(`candidates/${r.id}`)).fields;
   assert.equal(d.city.stringValue, "Delhi"); // not overwritten
   assert.equal(d.education.stringValue, "MBA");
-  assert.match(d.pdfUrl.stringValue, /FILE2/);
+  assert.match(d.pdfUrl.stringValue, /FILE1/);
 });
 test("PDF only, no fields: name comes from the file name", () => {
   const r = post({ secret: SECRET, file: { name: "Tanvi_G_Shah_Biodata_2024.pdf", base64: PDF } });

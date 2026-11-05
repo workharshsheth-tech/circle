@@ -11,6 +11,13 @@ const props = { PROJECT_ID: P, API_KEY: "demo-key", FOLDER_ID: "folder1", BOT_SE
 export const saved = [];
 // Fake Drive folder for scanFolder(): { id, name, mimeType, text, thumb }
 export const driveFiles = [];
+// Optional folder tree for recursive lanes: { id: { name, files: [fileId], folders: [folderId] } }
+export const driveFolders = {};
+export const triggers = [];
+const iter = (a) => { let i = 0; return { hasNext: () => i < a.length, next: () => a[i++] }; };
+const folderObj = (id) => { const d = driveFolders[id]; return { getName: () => d.name,
+  getFiles: () => iter(d.files.map((fid) => fileObj(driveFiles.find((x) => x.id === fid)))),
+  getFolders: () => iter((d.folders || []).map(folderObj)) }; };
 const fileObj = (f) => ({ getId: () => f.id, getName: () => f.name, getMimeType: () => f.mimeType,
   getBlob: () => ({ fileId: f.id, getBytes: () => [...(f.bytes || [])] }), getThumbnail: () => (f.thumb ? { getBytes: () => Buffer.from(f.thumb) } : null) });
 function curl(url, opt = {}) {
@@ -29,12 +36,14 @@ const ctx = vm.createContext({
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
   ContentService: { MimeType: { JSON: "json" }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
   UrlFetchApp: { fetch: curl },
-  ScriptApp: { getOAuthToken: () => "owner" },
+  ScriptApp: { getOAuthToken: () => "owner", getProjectTriggers: () => triggers.slice(),
+    deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
+    newTrigger: (fn) => { const b = { timeBased: () => b, after: () => b, everyMinutes: () => b, create: () => triggers.push({ getHandlerFunction: () => fn }) }; return b; } },
   Utilities: { base64Decode: (b) => Buffer.from(b, "base64"), base64Encode: (b) => Buffer.from(b).toString("base64"), newBlob: blob },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Drive: { Files: { create: (meta, blob) => ({ id: "ocr_" + blob.fileId }), remove() {} } },
   console: { log() {}, warn() {} },
-  DriveApp: { getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)), getFolderById: (id) => ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
+  DriveApp: { getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)), getFolderById: (id) => driveFolders[id] ? folderObj(id) : ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
 });
 vm.runInContext(readFileSync("apps-script/Code.gs", "utf8"), ctx);
 export const props_ = props;

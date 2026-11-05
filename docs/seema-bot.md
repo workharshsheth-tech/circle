@@ -1,5 +1,11 @@
 # Seema Aunty bot → Circle
 
+**Simplest path (in use):** the bot saves each biodata in Drive › Seema Aunty · Biodatas › **From chat**, and only there.
+Circle's script checks that folder every 15 minutes and adds or fills in the profile (source "Seema Aunty").
+Nothing below is needed for that. Other folders (e.g. Bina's batch) are one-time imports; the bot never writes to them.
+
+## Optional: the bot posts directly
+
 When a biodata PDF reaches the Seema Aunty bot, the bot reads it and sends it to Circle's intake link.
 Circle saves the PDF in Harsh's Drive folder and adds the profile, or fills in a profile with the same name.
 

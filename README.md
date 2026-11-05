@@ -71,16 +71,29 @@ The family's ticks move a profile forward up to "Harshaben matched"; after that 
 - **Profiles list**: grouped by stage, numbered 1–8 along the path. Filters: Stage, Source, Harshaben (passed / not / not yet),
   Community (all Jain groups as "Jain"), Language (choose several), City, and Height last.
 
-## New biodatas arrive by themselves
+## Where biodatas live (one Drive home)
 
-The Seema Aunty bot already saves biodatas in Drive › **Seema Aunty · Biodatas › From chat**. A small Google Apps Script
-(`apps-script/`, running as Harsh) checks that folder every 15 minutes. For each new girl it reads the biodata with
-Google's own text reading, adds her in **New** (shared with no one), fills height, date of birth, community, native,
-education, work and marital status, attaches the PDF, sets the source, and adds her photo: a separate photo file
-if Seema Aunty saved one, otherwise the best picture inside the biodata PDF (page backgrounds and banners are skipped). If she's already in Circle, it only fills
-empty fields. Phones, emails and addresses are left out. Harsh's own biodata is skipped.
+Everything is in Drive › **Seema Aunty · Biodatas** (https://drive.google.com/drive/folders/13AhRjQVi2val9F5fq55C7HK2aZnyC3WT).
+Circle's "All biodata PDFs in Drive" link points here. Profiles link to the files in place; nothing is ever copied.
 
-The same script powers **Profiles › Upload PDF**. Optionally the bot can post to it directly (`docs/seema-bot.md`).
+| Subfolder | What it is | How it gets into Circle | Source label |
+|---|---|---|---|
+| **From chat** | Live lane. Seema Aunty saves new biodatas **only here**. | `scanFolder`, every 15 minutes (FOLDER_ID) | Seema Aunty |
+| **From Bina · Divorced Brides 1990-1998** | One-time batch, year folders 1990–1996 (birth year). | `importBina`, run once | Bina · Divorced Brides |
+
+Both lanes: one profile per girl (files grouped by her name; "Name - file - sender" uploads use the first part),
+each Drive file remembered so it's never processed twice, and a girl already in Circle is only filled in
+(empty fields only; her PDF link, source and Harsh's edits are never replaced). Harsh's own biodata is skipped.
+Each biodata is read with Google's text reading for height, date of birth, community, native, education, work and
+marital status; phones, emails and addresses are left out. New profiles: stage New, shared with no one.
+Taller than 5′6″ still come in, as Height fail. For Bina's list, when the biodata doesn't say: age comes from the year
+folder and marital status is "Divorced". A single image biodata is linked as her biodata, not used as her photo.
+
+### Bina batch (one time)
+After pasting the latest `Code.gs`: pick **importBina** › **Run**. It works in rounds of about 5 minutes and starts
+the next round by itself until every file is in (about 15–20 minutes for ~69 files), then stops. **binaReport** › Run
+prints: created, updated (already in Circle), height pass / fail / unknown, which ones the text reading couldn't
+read (check those PDFs by hand) and any errors. Running it again later does nothing new.
 
 ### Set up the script (one time, about 10 minutes)
 
