@@ -16,6 +16,7 @@ const ok = (c, m) => { if (!c) throw new Error("FAIL: " + m); console.log("ok -"
 
 async function signIn(page, email) {
   await page.goto(BASE);
+  await page.click('[data-act="use-email"]');
   await page.fill('input[name="email"]', email);
   await page.click('button[type="submit"]');
   await page.getByText("We sent a sign-in link").waitFor();
@@ -84,7 +85,15 @@ ok(true, "owner comments");
 // 2. Reviewer
 const mc = await ctx(412), m = await mc.newPage();
 m.on("pageerror", (e) => console.log("pageerror", e.message));
-await signIn(m, MUM);
+// Mummy uses "Continue with Google" (the emulator shows its own account picker in the popup).
+await m.goto(BASE);
+const [pop] = await Promise.all([m.waitForEvent("popup"), m.click('[data-act="google"]')]);
+await pop.waitForLoadState();
+await pop.getByText("Add new account").click();
+await pop.fill("#email-input", MUM);
+await pop.fill("#display-name-input", "Mummy");
+await pop.getByText("Sign in with Google.com").click();
+ok(true, "Mummy signs in with Continue with Google");
 await m.locator("details.grp").first().waitFor();
 await m.locator("details.grp summary").first().click();
 ok((await m.locator(".cr").count()) === 1, "reviewer sees only the 1 shared profile");
@@ -106,6 +115,10 @@ await m.getByText("Zalawadi Dashashrimali Sthanakvasi Jain").waitFor();
 ok(true, "reviewer can read Harsh's biodata");
 
 // 3. Stranger
+const ic = await browser.newContext({ viewport: { width: 412, height: 900 }, userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36 WhatsApp/2.24" });
+const ip = await ic.newPage(); await ip.goto(BASE);
+await ip.getByText("Open in Chrome").waitFor(); ok(true, "inside WhatsApp it offers Open in Chrome");
+await ip.screenshot({ path: "shots/5-whatsapp-signin-412.png" });
 const sc = await ctx(412), s = await sc.newPage();
 await signIn(s, "stranger@example.com");
 await s.getByText("Not on the list yet").waitFor();

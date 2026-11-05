@@ -1,9 +1,10 @@
-// Circle · family review for Harsh. BUILD 4
+// Circle · family review for Harsh. BUILD 5
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
   getAuth, connectAuthEmulator, onAuthStateChanged, sendSignInLinkToEmail,
-  isSignInWithEmailLink, signInWithEmailLink, signOut,
+  isSignInWithEmailLink, signInWithEmailLink, signOut, GoogleAuthProvider, signInWithPopup,
+  signInWithRedirect, getRedirectResult,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
   getFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
@@ -11,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "4";
+export const BUILD = "5";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -92,8 +93,25 @@ async function finishLinkSignIn(email) {
   history.replaceState(null, "", location.pathname + "#/");
 }
 
+// WhatsApp / Instagram / Facebook open links in their own mini browser, where Google sign-in is blocked.
+const IN_APP = /WhatsApp|FBAN|FBAV|Instagram|Line\/|; wv\)/i.test(navigator.userAgent);
+const ANDROID = /Android/i.test(navigator.userAgent);
+function chromeLink() { return `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;end`; }
+
+async function googleSignIn(btn) {
+  const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: "select_account" });
+  btn.disabled = true;
+  try { await signInWithPopup(auth, p); }
+  catch (e) {
+    if (/popup-blocked|operation-not-supported/.test(e?.code || "")) return signInWithRedirect(auth, p);
+    btn.disabled = false;
+    if (!/popup-closed|cancelled-popup/.test(e?.code || "")) document.getElementById("err").textContent = niceErr(e);
+  }
+}
+
 function renderSignIn(stage = "ask", info = {}) {
-  const linkFlow = stage === "confirm";
+  const linkFlow = stage === "confirm", emailForm = stage === "email" || linkFlow;
+  const G = `<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
   $app.innerHTML = `
   <div class="auth">${TORAN}<div class="card">
     ${mark(44)}
@@ -101,12 +119,17 @@ function renderSignIn(stage = "ask", info = {}) {
     <p>${linkFlow ? "Type the email you asked the sign-in link for." :
       stage === "sent" ? `We sent a sign-in link to <b>${esc(info.email)}</b>. Open it on this phone.` :
       "Harsh's rishta review with family. Only people Harsh has invited can sign in."}</p>
-    ${stage === "sent" ? `<button class="btn ghost wide" data-act="again">Use a different email</button>` : `
+    ${IN_APP && !emailForm && stage !== "sent" ? `<div class="note">You opened this inside WhatsApp. Google sign-in works only in your phone's browser.
+      ${ANDROID ? `<a class="btn wide" style="margin-top:10px" href="${chromeLink()}">Open in Chrome</a>` : `<br>Tap <b>⋯</b> or the share icon, then <b>Open in Safari</b>.`}</div>` : ""}
+    ${stage === "sent" ? `<button class="btn ghost wide" data-act="again">Use a different email</button>` : emailForm ? `
     <form id="f-signin">
       <label class="f"><span>Email</span><input class="in-t" type="email" name="email" required autocomplete="email" inputmode="email" value="${esc(info.email || "")}"></label>
       <button class="btn wide" type="submit">${linkFlow ? "Sign in" : "Email me a sign-in link"}</button>
-      <div class="err" id="err">${esc(info.err || "")}</div>
-    </form>`}
+      ${linkFlow ? "" : `<button class="btn plain wide" type="button" data-act="again" style="margin-top:8px">Back</button>`}
+    </form>` : `
+    <button class="btn google wide" data-act="google">${G}<span>Continue with Google</span></button>
+    <button class="btn plain wide" data-act="use-email" style="margin-top:10px">Sign in with email instead</button>`}
+    <div class="err" id="err">${esc(info.err || "")}</div>
   </div></div>`;
   const f = document.getElementById("f-signin");
   if (f) f.onsubmit = async (e) => {
@@ -120,6 +143,8 @@ function renderSignIn(stage = "ask", info = {}) {
       }
     } catch (err) { btn.disabled = false; document.getElementById("err").textContent = niceErr(err); }
   };
+  $app.querySelector('[data-act="google"]')?.addEventListener("click", (e) => googleSignIn(e.currentTarget));
+  $app.querySelector('[data-act="use-email"]')?.addEventListener("click", () => renderSignIn("email"));
   $app.querySelector('[data-act="again"]')?.addEventListener("click", () => renderSignIn("ask"));
 }
 function niceErr(e) {
@@ -128,6 +153,7 @@ function niceErr(e) {
   if (c.includes("invalid-action-code") || c.includes("expired")) return "This link has expired or was used already. Ask for a new one.";
   if (c.includes("permission-denied")) return "You don't have access to this.";
   if (c.includes("too-many")) return "Too many tries. Wait a few minutes.";
+  if (c.includes("unauthorized-domain")) return "This web address isn't allowed for Google sign-in yet (Firebase › Authentication › Settings › Authorized domains).";
   return e?.message || "Something went wrong.";
 }
 
@@ -668,7 +694,7 @@ function viewPeople() {
   };
   $app.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     const m = S.members.find((x) => x.email === b.dataset.copy);
-    const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} and sign in with ${m.email}. You'll get a sign-in link by email.${isDrive(S.settings.driveFolder) ? ` The biodata PDFs are here: ${S.settings.driveFolder}` : ""}`;
+    const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} in Chrome and tap "Continue with Google" with ${m.email}.${isDrive(S.settings.driveFolder) ? ` The biodata PDFs are here: ${S.settings.driveFolder}` : ""}`;
     try { await navigator.clipboard.writeText(msg); toast("Invite copied. Send it yourself."); } catch { prompt("Copy this invite:", msg); }
   }));
   $app.querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = () => {
@@ -714,6 +740,7 @@ function viewHarshEdit() {
 
 // ---------- boot ----------
 (async function boot() {
+  getRedirectResult(auth).catch((e) => renderSignIn("ask", { err: niceErr(e) }));
   if (isSignInWithEmailLink(auth, location.href)) {
     const email = lsGet(LS_EMAIL);
     if (email) { try { await finishLinkSignIn(email); } catch (e) { renderSignIn("ask", { err: niceErr(e) }); } }

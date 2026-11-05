@@ -5,10 +5,11 @@ Not a public site: no sign-up, no search indexing, no link previews of profiles.
 
 ## Stack (and why)
 
-Firebase Auth (email sign-in link) + Firestore (security rules) + Firebase Hosting, plain HTML/JS, no build step.
+Firebase Auth ("Continue with Google", email link as backup) + Firestore (security rules) + Firebase Hosting, plain HTML/JS, no build step.
 
 - Free Spark plan, owned in Harsh's own Google account. Does not pause when idle (Supabase free does).
-- Email link sign-in: no passwords for family to forget; the link proves they own the email.
+- "Continue with Google": on an Android phone the family is already signed into Google, so it is one tap. No passwords, no codes.
+  Email link stays as a backup for anyone without a Google account. Phone OTP is possible later but needs the paid plan.
 - All access is enforced in `firestore.rules`, not in the page. A reviewer who opens dev tools still gets only what is shared with them.
 - Owner is fixed in the rules (`work.harshsheth@gmail.com`), so no data change can make anyone else admin.
 - No service or admin key anywhere. `public/config.js` holds only the public web config.
@@ -28,7 +29,9 @@ Pausing or removing a person cuts access at once.
 1. Open the app > **Family** > type name and email > **Add**.
 2. Tap **Copy invite** and send it yourself (WhatsApp, Wispr). The app never sends anything.
 3. Open a profile > **Shared with** > tick the person (or **Everyone**).
-4. They open the link, type the same email, tap the sign-in link in their inbox. Done.
+4. They open the link in Chrome and tap **Continue with Google**, picking the same email you added. Done; it stays signed in.
+   If they open it inside WhatsApp, the page shows an **Open in Chrome** button first.
+   Tip: in Chrome, ⋮ > **Add to Home screen**, so Circle opens like an app.
 
 Someone not on the list who tries to sign in sees "Not on the list yet" and no data.
 
@@ -73,8 +76,9 @@ Someone not on the list who tries to sign in sees "Not on the list yet" and no d
 ## Set up (one time, about 15 minutes)
 
 1. https://console.firebase.google.com > **Add project** (signed in as work.harshsheth@gmail.com). Analytics off.
-2. **Build > Authentication > Get started > Email/Password** > turn on **Email link (passwordless sign-in)**.
-   Leave plain Email/Password off.
+2. **Authentication > Get started > Sign-in method**:
+   - **Google** > Enable, support email work.harshsheth@gmail.com > Save.
+   - **Email/Password** > turn on **Email link (passwordless sign-in)** > Save.
 3. **Authentication > Settings > User actions**: leave "Create" on (needed for email link), turn on **Email enumeration protection**.
 4. **Build > Firestore Database > Create database**, production mode, region `asia-south1` (Mumbai).
 5. **Project settings > Your apps > Web (</>)**, register "circle". Copy the config into `public/config.js`.
