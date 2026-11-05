@@ -2,8 +2,9 @@
 # Sign-in to Google is keyless (Workload Identity): no secrets are stored in GitHub.
 name: Deploy Circle
 
-# Manual only until the one-time Google setup (scripts/setup-auto-deploy.sh) is done; then "push" is switched on.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
