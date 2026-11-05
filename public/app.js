@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 11
+// Circle · family review for Harsh. BUILD 12
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "11";
+export const BUILD = "12";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -25,8 +25,8 @@ if (LOCAL) {
 // The family's usual path: Mummy calls her mother, mothers swap biodatas, the girl's Janmakshar (birth name, date,
 // time, place) comes in, it goes to Harshaben for matching, families meet, then it's Harsh and the girl.
 // On hold / Pass are the side doors.
-const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "With Harshaben", "Families meet", "Harsh meets her", "Going ahead", "On hold", "Pass"];
-const OLD_STAGE = { "In review": "New", "Shortlist": "New", "Shared": "Biodatas exchanged", "Talking": "Mothers in touch", "Meeting": "Families meet", "Kundli check": "With Harshaben" };
+const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "Waiting for Harshaben", "Harshaben matched", "Families meet", "Harsh meets her", "Going ahead", "On hold", "Pass"];
+const OLD_STAGE = { "In review": "New", "Shortlist": "New", "Shared": "Biodatas exchanged", "Talking": "Mothers in touch", "Meeting": "Families meet", "Kundli check": "Waiting for Harshaben", "With Harshaben": "Waiting for Harshaben" };
 const SIDE = ["On hold", "Pass"];
 const validStage = (x) => (STAGES.includes(x) ? x : OLD_STAGE[x] || "New");
 // Harsh sets the stage; the family's ticks can only move it forward along the family's part of the path.
@@ -36,9 +36,9 @@ const stageOf = (c) => {
   const fam = STAGES.includes(c.familyStage) ? c.familyStage : "New";
   return STAGES.indexOf(fam) > STAGES.indexOf(base) ? fam : base;
 };
-const FAMILY_STAGES = STAGES.slice(0, 5);
 function impliedStage(p) {
-  if (p.sentToHarshaben || (p.kundli && p.kundli !== "Pending")) return "With Harshaben";
+  if (p.kundli === "Match") return "Harshaben matched";
+  if (p.sentToHarshaben || p.kundli) return "Waiting for Harshaben";
   if (p.birthDate || p.birthTime || p.birthPlace || p.birthName) return "Janmakshar received";
   if (p.biodataExchanged) return "Biodatas exchanged";
   if (p.motherContacted) return "Mothers in touch";
@@ -372,7 +372,8 @@ function rowHtml(c) {
   let right;
   if (S.owner) right = s.count ? `<span class="score"><span class="mini-star">★</span> <b>${s.avg.toFixed(1)}</b> · ${s.count}</span>` : `<span class="score">No ratings</span>`;
   else right = s.mine ? `<span class="score">You <span class="mini-star">★</span><b>${s.mine}</b></span>` : `<span class="tag blue">Rate</span>`;
-  const hb = c.harshaben === "Match" ? `<span class="tag ok">Harshaben: match</span>` : c.harshaben === "No match" ? `<span class="tag bad">Harshaben: no match</span>` : "";
+  const waitDays = stageOf(c) === "Waiting for Harshaben" && c.sentOn ? Math.max(0, Math.floor((Date.now() - new Date(c.sentOn)) / 864e5)) : null;
+  const hb = waitDays != null ? `<span class="tag blue">Waiting ${waitDays === 0 ? "since today" : waitDays === 1 ? "1 day" : waitDays + " days"}</span>` : c.harshaben === "Match" ? `<span class="tag ok">Harshaben: match</span>` : c.harshaben === "No match" ? `<span class="tag bad">Harshaben: no match</span>` : "";
   const flags = S.owner ? [fitChecks(c).some((x) => x.must && x.ok === false) && "Misses a must", c.hidden && "Hidden", !c.hidden && !c.archived && !(c.viewers || []).length && "Not shared"].filter(Boolean) : [];
   return `<a class="cr" href="#/c/${c.id}">
     <div class="av">${c.photo ? `<img src="${c.photo}" alt="" loading="lazy">` : esc(initials(c.name))}</div>
@@ -436,9 +437,11 @@ function subscribeDetail(id) {
   const email = lc(S.user.email);
   D.prog = null;
   S.detailUnsubs.push(onSnapshot(doc(db, "candidates", id, "progress", "family"), (d) => { D.prog = d.exists() ? d.data() : {}; redrawDetail(); }, () => { D.prog = {}; }));
-  S.detailUnsubs.push(onSnapshot(query(collection(db, "candidates", id, "comments"), orderBy("createdAt")), (snap) => {
+  // Live comments; if the connection drops, listen again after a moment.
+  const listenComments = () => S.detailUnsubs.push(onSnapshot(query(collection(db, "candidates", id, "comments"), orderBy("createdAt")), (snap) => {
     D.comments = snap.docs.map((d) => ({ id: d.id, ...d.data() })); redrawDetail();
-  }, () => {}));
+  }, () => setTimeout(() => { if (D.id === id) listenComments(); }, 1500)));
+  listenComments();
   const listenAll = () => S.detailUnsubs.push(onSnapshot(collection(db, "candidates", id, "reviews"), (snap) => {
     D.reviews = snap.docs.map((d) => ({ email: d.id, ...d.data() }));
     D.mine = D.reviews.find((r) => r.email === email)?.stars || null;
@@ -559,7 +562,12 @@ function bindDetail(c) {
   f.onsubmit = async (e) => {
     e.preventDefault(); const text = f.text.value.trim(); if (!text) return;
     f.querySelector("button").disabled = true;
-    try { await addDoc(collection(db, "candidates", id, "comments"), { email, name: myName(), text, createdAt: serverTimestamp() }); f.text.value = ""; f.text.blur(); redrawDetail(); }
+    try {
+      const ref = await addDoc(collection(db, "candidates", id, "comments"), { email, name: myName(), text, createdAt: serverTimestamp() });
+      // Show it at once, even before the live update arrives.
+      if (!D.comments.some((x) => x.id === ref.id)) D.comments = [...D.comments, { id: ref.id, email, name: myName(), text }];
+      f.text.value = ""; f.text.blur(); redrawDetail();
+    }
     catch (err) { toast(niceErr(err)); f.querySelector("button").disabled = false; }
   };
   $app.querySelectorAll("[data-edit-cm]").forEach((b) => (b.onclick = () => { D.editing = b.dataset.editCm; drawDetail(c); $app.querySelector(`[data-edit] textarea`)?.focus(); }));
@@ -572,6 +580,25 @@ function bindDetail(c) {
   const fam = document.getElementById("f-fam");
   $app.querySelectorAll(".seg input, .tick input[type=checkbox]").forEach((i) => (i.onchange = () => { i.closest(".seg")?.querySelectorAll("label").forEach((l) => l.classList.toggle("on", l.querySelector("input").checked)); if (i.type === "checkbox") i.closest(".tick")?.classList.toggle("on", i.checked); }));
   if (fam) {
+    fam.querySelector('[data-act="wa"]').onclick = () => {
+      const v = { birthName: fam.birthName.value.trim(), birthDate: fam.birthDate.value, birthTime: fam.birthTime.value, birthPlace: fam.birthPlace.value.trim() };
+      if (!v.birthDate || !v.birthTime || !v.birthPlace) { toast("Fill birth date, time and place first."); return; }
+      const text = kundliText(c, v);
+      const box = document.createElement("div"); box.className = "sheet";
+      box.innerHTML = `<div class="sheet-in"><div class="ph" style="margin:0 0 10px"><h2>Send to Kundli group</h2></div>
+        <pre class="wa-preview">${esc(text)}</pre>
+        <p class="hint">WhatsApp opens with this message. Pick <b>Kundli - Matching</b> and tap Send. Circle then marks it sent and waits for Harshaben.</p>
+        <div style="display:flex;gap:8px"><button class="btn wa" data-go>${WA_ICON}<span>Open WhatsApp</span></button><button class="btn plain" data-x>Cancel</button></div></div>`;
+      document.body.appendChild(box);
+      box.querySelector("[data-x]").onclick = () => box.remove();
+      box.querySelector("[data-go]").onclick = () => {
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+        box.remove();
+        fam.sentToHarshaben.checked = true; fam.sentToHarshaben.closest(".tick").classList.add("on");
+        if (!fam.sentOn.value) fam.sentOn.value = new Date().toISOString().slice(0, 10);
+        fam.requestSubmit();
+      };
+    };
     fam.onsubmit = async (e) => {
       e.preventDefault();
       const t = (n) => fam[n].value.trim();
@@ -583,7 +610,7 @@ function bindDetail(c) {
       try {
         await setDoc(doc(db, "candidates", id, "progress", "family"), v);
         // Move the stage along the family's path (never backwards past what Harsh set) and show Harshaben's word on the list.
-        await updateDoc(doc(db, "candidates", id), { familyStage: impliedStage(v), harshaben: v.kundli });
+        await updateDoc(doc(db, "candidates", id), { familyStage: impliedStage(v), harshaben: v.kundli, sentOn: v.sentToHarshaben ? v.sentOn : "" });
         document.activeElement?.blur(); toast("Saved");
       } catch (err) { toast(niceErr(err)); }
     };
@@ -619,6 +646,14 @@ function bindDetail(c) {
 }
 
 // ---------- family's part (Mummy & Papa): contact her mother, swap biodatas, kundli, feedback ----------
+const WA_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 2s.8 2.3.9 2.5c.1.2 1.6 2.5 4 3.5 1.5.6 2.1.7 2.8.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>`;
+// The message for the Kundli - Matching group. Shown in full before WhatsApp opens; the person sending taps Send.
+function kundliText(c, v) {
+  const d = v.birthDate ? fmtDob(v.birthDate) : "";
+  const t = v.birthTime ? new Date(`2000-01-01T${v.birthTime}`).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }) : "";
+  return [`Kundli matching for Harsh`, ``, `Girl: ${v.birthName ? `${c.name} (birth name ${v.birthName})` : c.name}`,
+    `Birth date: ${d || "-"}`, `Birth time: ${t || "-"}`, `Birth place: ${v.birthPlace || "-"}`].join("\n");
+}
 function familyPartHtml() {
   const p = D.prog; if (!p) return "";
   const c = S.cands.get(D.id) || {}, kund = p.kundli || "";
@@ -633,6 +668,7 @@ function familyPartHtml() {
         <label class="f"><span>Place of birth</span><input class="in-t" name="birthPlace" maxlength="60" value="${esc(p.birthPlace)}"></label></div>
       <div class="row2"><label class="f"><span>Birth date</span><input class="in-t" type="date" name="birthDate" value="${esc(p.birthDate || "")}">${!p.birthDate && c.dob ? `<span class="hint">Biodata says ${esc(fmtDob(c.dob))}</span>` : ""}</label>
         <label class="f"><span>Birth time</span><input class="in-t" type="time" name="birthTime" value="${esc(p.birthTime)}"></label></div>
+      <button class="btn wa wide" type="button" data-act="wa">${WA_ICON}<span>Send Janmakshar to Kundli group</span></button>
       ${tick("sentToHarshaben", "4. Sent to Harshaben", `<input class="in-t sm" type="date" name="sentOn" value="${esc(p.sentOn)}" aria-label="When">`)}
       <div class="f" style="margin-top:12px"><span class="lbl">5. Harshaben's feedback</span><div class="seg">${KUNDLI.slice(1).map((x) => `<label class="${kund === x ? "on" : ""}"><input type="radio" name="kundli" value="${x}" ${kund === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
       <label class="f"><textarea class="in-t" name="harshabenNotes" maxlength="2000" placeholder="What Harshaben said">${esc(p.harshabenNotes)}</textarea></label>

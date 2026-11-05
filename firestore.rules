@@ -39,8 +39,9 @@ service cloud.firestore {
       allow write: if isOwner();
       // Family can move the stage along their own part of the path and record Harshaben's word. Nothing else.
       allow update: if isMember() && email() in resource.data.viewers
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['familyStage', 'harshaben'])
-        && request.resource.data.familyStage in ['New', 'Mothers in touch', 'Biodatas exchanged', 'Janmakshar received', 'With Harshaben']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['familyStage', 'harshaben', 'sentOn'])
+        && request.resource.data.familyStage in ['New', 'Mothers in touch', 'Biodatas exchanged', 'Janmakshar received', 'Waiting for Harshaben', 'Harshaben matched']
+        && request.resource.data.get('sentOn', '') is string && request.resource.data.get('sentOn', '').size() <= 10
         && request.resource.data.harshaben in ['', 'Pending', 'Match', 'No match'];
 
       // Admin-only notes (contact numbers, source, private remarks). Reviewers never read this.

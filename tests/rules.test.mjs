@@ -86,10 +86,10 @@ test("family's part: shared family can fill it, nobody else, only known fields",
   await assertSucceeds(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), jm));
 });
 test("family can move the stage along their part only, never Harsh's fields", async () => {
-  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "With Harshaben", harshaben: "Match" }));
+  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", harshaben: "", sentOn: "2026-11-05" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Going ahead" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { stage: "Pass" }));
-  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "With Harshaben", viewers: [MUM, OUT] }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Harshaben matched", viewers: [MUM, OUT] }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "b"), { familyStage: "Mothers in touch" }));
 });
 test("owner can do everything", async () => {

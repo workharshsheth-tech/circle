@@ -1,4 +1,4 @@
-/* Circle · family review. BUILD 11 */
+/* Circle · family review. BUILD 12 */
 :root{
   --blue:#1c3fae; --blue-ink:#14307f; --blue-soft:#eaf0ff; --blue-line:#cdd8fb;
   --sun:#f5a300; --sun-soft:#fff1cc; --sun-ink:#9a5b00;
@@ -232,3 +232,6 @@ details.chip.ms>summary::-webkit-details-marker{display:none}
 .crop{position:relative;touch-action:none;user-select:none;line-height:0;width:fit-content;margin:0 auto;overflow:hidden;border-radius:8px}
 .crop img{max-width:100%;max-height:60vh;display:block;margin:0 auto}
 .crop .sq{position:absolute;border:3px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.45);border-radius:8px;cursor:move}
+/* BUILD 12: WhatsApp send */
+.btn.wa{background:#1fa855;border-color:#1fa855;color:#fff;gap:8px;margin:4px 0 10px}
+.wa-preview{white-space:pre-wrap;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#e7f8ec;border-radius:12px;padding:12px 14px;margin:0 0 10px}

@@ -55,11 +55,14 @@ Someone not on the list who tries to sign in sees "Not on the list yet" and no d
 
 ## How a rishta moves in Circle
 
-Stages follow the family's usual path: **New → Mothers in touch → Biodatas exchanged → Kundli check → Families meet →
-Harsh meets her → Going ahead**, plus **On hold** and **Pass**.
+Stages follow the family's usual path: **New → Mothers in touch → Biodatas exchanged → Janmakshar received →
+Waiting for Harshaben → Harshaben matched → Families meet → Harsh meets her → Going ahead**, plus **On hold** and **Pass**.
+The family's ticks move a profile forward up to "Harshaben matched"; after that Harsh moves it.
 
 - **Family's part** (on every profile, filled by Mummy, Papa or anyone it's shared with): spoke to her mother (and when),
-  biodatas exchanged, kundli (Pending / Match / No match), and what they felt about her family.
+  biodatas exchanged, her Janmakshar (birth name, date, time, place), **Send Janmakshar to Kundli group** (WhatsApp opens with
+  the message ready; pick the "Kundli - Matching" group and tap Send; Circle marks it sent and shows "Waiting N days"),
+  Harshaben's feedback (Pending / Match / No match, and what she said), and what they felt about her family.
 - **Harsh's part** (only Harsh sees): **My call** (Yes / Not sure / No) and private notes on each profile.
 - **My criteria** tab (only Harsh): what he wants and how much it matters (Must / Nice / Doesn't matter), deal-breakers,
   what he learnt from meetings, thinking out loud. Each profile shows "Against my criteria"; the list flags "Misses a must".
