@@ -68,6 +68,11 @@ test("comments: as yourself only, edit own only", async () => {
   await assertFails(updateDoc(doc(as(OWNER), "candidates", "a", "comments", ref.id), { text: "changed by Harsh" }));
   await assertFails(updateDoc(ref, { email: OUT }));
 });
+test("intake settings are owner-only", async () => {
+  await assertFails(getDoc(doc(as(MUM), "admin", "settings")));
+  await assertFails(setDoc(doc(as(MUM), "admin", "settings"), { intakeUrl: "https://evil.example" }));
+  await assertSucceeds(setDoc(doc(as(OWNER), "admin", "settings"), { intakeUrl: "https://script.google.com/macros/s/x/exec" }));
+});
 test("owner can do everything", async () => {
   const db = as(OWNER);
   await assertSucceeds(getDocs(collection(db, "candidates")));

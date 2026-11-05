@@ -49,6 +49,27 @@ Someone not on the list who tries to sign in sees "Not on the list yet" and no d
   Keep the folder on "Restricted", not "Anyone with the link".
 - Import also takes a `pdf` column with the Drive link.
 
+## Upload a PDF, or send it to the Seema Aunty bot
+
+- In Circle: **Profiles > Upload PDF**. The PDF goes into the Drive folder and becomes a profile in **New**
+  (or is attached to the profile with the same name). Then fill in the details.
+- From the bot: see `docs/seema-bot.md` for what the bot sends and the text to give Grok.
+- Both go through one small Google Apps Script (`apps-script/`), running as Harsh: it saves into his Drive and writes
+  to Circle. It accepts only the bot's secret or Harsh's own Circle sign-in.
+
+### Set up the intake (one time, about 10 minutes)
+
+1. https://script.google.com > **New project**, name it "Circle intake" (signed in as work.harshsheth@gmail.com).
+2. Paste `apps-script/Code.gs` into Code.gs. **Project settings** > tick "Show appsscript.json" and paste
+   `apps-script/appsscript.json`.
+3. **Project settings > Script properties**, add: `PROJECT_ID` (Firebase project id), `API_KEY` (from `public/config.js`),
+   `FOLDER_ID` (the part after `/folders/` in the Drive folder link), `OWNER_EMAIL` (work.harshsheth@gmail.com),
+   `BOT_SECRET` (at least 24 random characters; keep it out of chats).
+4. **Deploy > New deployment > Web app**, Execute as **Me**, Who has access **Anyone**. Allow the permissions.
+   Copy the web app URL.
+5. In Circle: **Family > Setup > Intake link**, paste the URL, **Save**.
+6. Put the same URL and `BOT_SECRET` into the Seema Aunty bot's settings yourself.
+
 ## Set up (one time, about 15 minutes)
 
 1. https://console.firebase.google.com > **Add project** (signed in as work.harshsheth@gmail.com). Analytics off.
@@ -68,7 +89,7 @@ No environment variables are needed. If you change the owner email, change it in
 
 - `npm run dev` starts local Auth, Firestore and Hosting emulators. Open http://localhost:5000.
   Sign-in links appear at http://127.0.0.1:9099/emulator/v1/projects/demo-family-review/oobCodes.
-- `npm test` runs the security rules tests (7 cases: strangers, paused people, blind rating, private notes, comment spoofing).
+- `npm test` runs the security rules tests (8) and the intake tests (5: wrong secret, bot PDF with fields, same-name merge, PDF only, only Harsh's sign-in).
 - `node tests/e2e.mjs` (with `npm run dev` running) drives a real browser: owner signs in, imports, invites,
   shares; reviewer signs in, rates, comments; a stranger is turned away. Screenshots go to `shots/`.
 

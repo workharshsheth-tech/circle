@@ -2,6 +2,7 @@
 // node tests/e2e.mjs  -> screenshots in shots/
 import { createRequire } from "node:module";
 const { chromium } = createRequire(import.meta.url)("playwright");
+import { post as intake } from "./gas-harness.mjs";
 import { readFileSync, mkdirSync } from "node:fs";
 const BASE = "http://localhost:5000/", AUTH = "http://127.0.0.1:9099";
 const OWNER = "work.harshsheth@gmail.com", MUM = "mum@example.com";
@@ -46,9 +47,21 @@ await o.click('#f-add button[type="submit"]');
 await o.getByText(MUM).waitFor();
 ok(true, "owner adds a family member");
 await o.fill('#f-drive input[name="folder"]', "https://drive.google.com/drive/folders/TEST_FOLDER_ID_0000000000");
+await o.fill('#f-drive input[name="intake"]', "https://script.google.com/macros/s/TEST/exec");
 await o.click('#f-drive button[type="submit"]');
-await o.getByText("Folder saved").waitFor();
-ok(true, "owner saves the Drive folder link");
+await o.getByText("Saved").first().waitFor();
+ok(true, "owner saves the Drive folder and intake link");
+// The intake web app runs here through the Node harness (real Code.gs, local database).
+await o.route("https://script.google.com/**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(intake(JSON.parse(route.request().postData()))) }));
+await o.goto(BASE + "#/");
+await o.setInputFiles('[data-act="upload"]', { name: "Shivani_Malik_Biodata.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") });
+await o.getByRole("heading", { name: "Shivani Malik" }).waitFor();
+await o.locator("a.pdf").waitFor();
+ok(true, "Upload PDF attaches the file to the matching profile (Shivani)");
+await o.goto(BASE + "#/");
+await o.setInputFiles('[data-act="upload"]', { name: "Riya Doshi Biodata.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") });
+await o.getByRole("heading", { name: "Riya Doshi" }).waitFor();
+ok(await o.getByText("Height not known").first().isVisible(), "Upload PDF of a new girl makes a new profile in New");
 await o.goto(BASE + "#/");
 await o.locator('details.grp[data-stage="In review"] summary').click();
 await o.getByText("Mansi Panchamia").click();

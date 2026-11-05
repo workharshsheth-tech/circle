@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 2
+// Circle · family review for Harsh. BUILD 3
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "2";
+export const BUILD = "3";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -28,7 +28,7 @@ const $app = document.getElementById("app");
 // ---------- state ----------
 const S = {
   user: null, me: null, owner: false,
-  cands: new Map(), members: [], harsh: null, settings: {}, summaries: new Map(),
+  cands: new Map(), members: [], harsh: null, settings: {}, admin: {}, summaries: new Map(),
   filters: { stage: "", height: "", community: "", city: "", q: "", archived: false },
   open: new Set(), unsubs: [], detailUnsubs: [], route: "",
 };
@@ -151,6 +151,7 @@ async function startData() {
     S.cands = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
     loadSummaries(); if (first) { first = false; route(); } else rerenderSoft();
   }, (e) => toast(niceErr(e))));
+  if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(collection(db, "members"), (snap) => {
     S.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     rerenderSoft();
@@ -263,7 +264,7 @@ function viewList() {
   const total = S.owner ? [...S.cands.values()].filter((c) => !c.archived).length : S.cands.size;
   $app.innerHTML = shell(`
     <div class="ph"><h2>${S.owner ? "Profiles" : "Profiles Harsh shared"}</h2>
-      ${S.owner ? `<a class="btn ghost sm" href="#/import">Import</a>` : ""}</div>
+      ${S.owner ? `<label class="btn sm" id="up-btn">Upload PDF<input type="file" accept="application/pdf,.pdf" hidden data-act="upload"></label><a class="btn ghost sm" href="#/import">Import</a>` : ""}</div>
     ${isDrive(S.settings.driveFolder) ? `<div class="links"><a href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">All biodata PDFs in Drive ↗</a></div>` : ""}
     <input class="search" type="search" placeholder="Search name, city, work" value="${esc(f.q)}" data-filter="q">
     <div class="filters">
@@ -286,6 +287,7 @@ function viewList() {
   $app.querySelectorAll("select[data-filter]").forEach((el) => (el.onchange = () => { S.filters[el.dataset.filter] = el.value; viewList(); }));
   const s = $app.querySelector('input[data-filter="q"]');
   s.oninput = () => { S.filters.q = s.value; const pos = s.selectionStart; viewList(); const n = $app.querySelector('input[data-filter="q"]'); n.focus(); n.setSelectionRange(pos, pos); };
+  $app.querySelector('[data-act="upload"]')?.addEventListener("change", (e) => uploadPdf(e.target.files[0]));
   $app.querySelector('[data-act="arch"]')?.addEventListener("click", () => { S.filters.archived = !S.filters.archived; viewList(); });
   $app.querySelector('[data-act="clear"]')?.addEventListener("click", () => { Object.assign(S.filters, { stage: "", height: "", community: "", city: "", q: "" }); viewList(); });
 }
@@ -459,6 +461,23 @@ function bindDetail(c) {
   };
 }
 
+// ---------- upload a biodata PDF (goes to Harsh's Drive and becomes a profile, via the intake script) ----------
+async function uploadPdf(file) {
+  if (!file) return;
+  if (!S.admin.intakeUrl) { toast("Add the intake link first: Family › Setup."); location.hash = "#/people"; return; }
+  if (file.size > 15e6) { toast("That PDF is over 15 MB."); return; }
+  const btn = document.getElementById("up-btn"); if (btn) { btn.classList.add("busy"); btn.firstChild.textContent = "Uploading…"; }
+  try {
+    const base64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+    const idToken = await S.user.getIdToken();
+    // text/plain body keeps this a simple request (no CORS preflight), which Apps Script needs.
+    const r = await (await fetch(S.admin.intakeUrl, { method: "POST", body: JSON.stringify({ idToken, file: { name: file.name, mimeType: file.type || "application/pdf", base64 } }) })).json();
+    if (!r.ok) throw new Error(r.error || "Upload failed");
+    toast(r.created ? `Added ${r.name}. Fill in the details.` : `PDF added to ${r.name}`);
+    location.hash = `#/c/${r.id}`;
+  } catch (e) { toast(niceErr(e)); if (btn) { btn.classList.remove("busy"); btn.firstChild.textContent = "Upload PDF"; } }
+}
+
 // ---------- add / edit ----------
 const FIELDS = [
   ["name", "Full name", "text", true], ["dob", "Date of birth", "date"], ["age", "Age (if no date of birth)", "number"],
@@ -613,11 +632,14 @@ function viewPeople() {
       <label class="f"><span>Email</span><input class="in-t" name="email" type="email" required inputmode="email"></label></div>
       <button class="btn" type="submit">Add</button><div class="err" id="err"></div>
     </form>
-    <form id="f-drive" class="card">
-      <label class="f" style="margin-bottom:8px"><span>Drive folder with the biodata PDFs</span><input class="in-t" name="folder" type="url" inputmode="url" placeholder="https://drive.google.com/drive/folders/…" value="${esc(S.settings.driveFolder)}"></label>
-      <div class="hint" style="margin-bottom:10px">Everyone here needs view access to this folder to open the PDFs. In Drive: Share › add their email › Viewer.</div>
-      <button class="btn ghost sm" type="submit">Save folder</button>${isDrive(S.settings.driveFolder) ? ` <a class="btn plain sm" href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">Open in Drive ↗</a>` : ""}
-    </form>
+    <details class="grp" ${S.admin.intakeUrl && S.settings.driveFolder ? "" : "open"}><summary>Setup<span class="sp"></span><span class="car"></span></summary>
+    <form id="f-drive" style="padding:16px">
+      <label class="f"><span>Drive folder with the biodata PDFs</span><input class="in-t" name="folder" type="url" inputmode="url" placeholder="https://drive.google.com/drive/folders/…" value="${esc(S.settings.driveFolder)}"></label>
+      <div class="hint" style="margin:-6px 0 14px">Everyone here needs view access to this folder. In Drive: Share › add their email › Viewer.</div>
+      <label class="f"><span>Intake link (Apps Script web app)</span><input class="in-t" name="intake" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(S.admin.intakeUrl)}"></label>
+      <div class="hint" style="margin:-6px 0 14px">Only you see this. It lets "Upload PDF" and the Seema Aunty bot add profiles.</div>
+      <button class="btn ghost sm" type="submit">Save</button>${isDrive(S.settings.driveFolder) ? ` <a class="btn plain sm" href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">Open folder ↗</a>` : ""}
+    </form></details>
     <section class="card people">
       ${people.length ? people.map((m) => `<div class="p">
         <div class="av">${esc(initials(m.name))}</div>
@@ -637,9 +659,11 @@ function viewPeople() {
   };
   const fd = document.getElementById("f-drive");
   fd.onsubmit = async (e) => {
-    e.preventDefault(); const u = fd.folder.value.trim();
-    if (u && !isDrive(u)) { toast("That isn't a Google Drive link."); return; }
-    await setDoc(doc(db, "reference", "settings"), { ...S.settings, driveFolder: u }); document.activeElement?.blur(); toast("Folder saved");
+    e.preventDefault(); const u = fd.folder.value.trim(), i = fd.intake.value.trim();
+    if (u && !isDrive(u)) { toast("The folder must be a Google Drive link."); return; }
+    if (i && !/^https:\/\/script\.google(usercontent)?\.com\//.test(i) && !LOCAL) { toast("The intake link must start with https://script.google.com/"); return; }
+    await setDoc(doc(db, "reference", "settings"), { ...S.settings, driveFolder: u });
+    await setDoc(doc(db, "admin", "settings"), { ...S.admin, intakeUrl: i }); document.activeElement?.blur(); toast("Saved");
   };
   $app.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     const m = S.members.find((x) => x.email === b.dataset.copy);
