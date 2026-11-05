@@ -1,0 +1,68 @@
+rules_version = '2';
+// Circle · family review. Deny by default. Only the owner and invited members get anything.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function email() { return request.auth.token.email.lower(); }
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+    // Owner is fixed here, not in the database, so no data change can make someone else admin.
+    function isOwner() { return signedIn() && email() == 'work.harshsheth@gmail.com'; }
+    function isMember() {
+      return signedIn() && exists(/databases/$(db)/documents/members/$(email()))
+        && get(/databases/$(db)/documents/members/$(email())).data.active == true;
+    }
+    function cand(id) { return get(/databases/$(db)/documents/candidates/$(id)).data; }
+    // A reviewer sees a profile only while it is in its `viewers` list (shared, not hidden, not archived).
+    function canSee(id) { return isOwner() || (isMember() && email() in cand(id).viewers); }
+    function hasRated(id) { return exists(/databases/$(db)/documents/candidates/$(id)/reviews/$(email())); }
+
+    match /members/{m} {
+      allow read: if isOwner() || (signedIn() && m == email());
+      allow write: if isOwner();
+    }
+
+    match /reference/{doc} {
+      allow read: if isOwner() || isMember();
+      allow write: if isOwner();
+    }
+
+    match /candidates/{id} {
+      allow read: if isOwner() || (isMember() && email() in resource.data.viewers);
+      allow write: if isOwner();
+
+      // Admin-only notes (contact numbers, source, private remarks). Reviewers never read this.
+      match /private/{doc} {
+        allow read, write: if isOwner();
+      }
+
+      // One rating per person. Blind until you rate: you see others' stars only after giving yours.
+      match /reviews/{who} {
+        allow read: if isOwner() || (canSee(id) && (who == email() || hasRated(id)));
+        allow create, update: if canSee(id) && who == email()
+          && request.resource.data.keys().hasOnly(['stars', 'name', 'updatedAt'])
+          && request.resource.data.stars is int
+          && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
+          && request.resource.data.name is string && request.resource.data.name.size() <= 60;
+        allow delete: if isOwner() || (canSee(id) && who == email());
+      }
+
+      match /comments/{c} {
+        allow read: if canSee(id);
+        allow create: if canSee(id)
+          && request.resource.data.keys().hasOnly(['email', 'name', 'text', 'createdAt'])
+          && request.resource.data.email == email()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && request.resource.data.name is string && request.resource.data.name.size() <= 60;
+        allow update: if canSee(id) && resource.data.email == email()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000;
+        allow delete: if isOwner() || (canSee(id) && resource.data.email == email());
+      }
+    }
+  }
+}

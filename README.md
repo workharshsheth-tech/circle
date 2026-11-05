@@ -1,0 +1,69 @@
+# Circle · Harsh's family review
+
+Private, invite-only app where Harsh shares marriage biodatas with close family, who rate (1–5 stars) and comment.
+Not a public site: no sign-up, no search indexing, no link previews of profiles.
+
+## Stack (and why)
+
+Firebase Auth (email sign-in link) + Firestore (security rules) + Firebase Hosting, plain HTML/JS, no build step.
+
+- Free Spark plan, owned in Harsh's own Google account. Does not pause when idle (Supabase free does).
+- Email link sign-in: no passwords for family to forget; the link proves they own the email.
+- All access is enforced in `firestore.rules`, not in the page. A reviewer who opens dev tools still gets only what is shared with them.
+- Owner is fixed in the rules (`work.harshsheth@gmail.com`), so no data change can make anyone else admin.
+- No service or admin key anywhere. `public/config.js` holds only the public web config.
+
+## Who sees what
+
+- Profiles: Harsh sees all; family sees only ones shared with them (and not hidden or archived); anyone else sees nothing.
+- Ratings: Harsh sees everyone's; family see their own, and others' only after they rate (blind first).
+- Comments: Harsh sees all; family see comments on profiles shared with them.
+- Private notes (contact, source, notes): Harsh only.
+- Harsh's biodata: Harsh edits; family read.
+
+Pausing or removing a person cuts access at once.
+
+## How Harsh invites someone
+
+1. Open the app > **Family** > type name and email > **Add**.
+2. Tap **Copy invite** and send it yourself (WhatsApp, Wispr). The app never sends anything.
+3. Open a profile > **Shared with** > tick the person (or **Everyone**).
+4. They open the link, type the same email, tap the sign-in link in their inbox. Done.
+
+Someone not on the list who tries to sign in sees "Not on the list yet" and no data.
+
+## Adding profiles
+
+- One at a time: **+ Add profile** (photo is shrunk to under 300 KB and kept only in Firestore).
+- Many at once: **Profiles > Import**, paste CSV or JSON. Columns: name, dob, age, height (5'4" or 163 cm),
+  community, native, city, education, work, family, marital, diet, about, stage. Private columns: contact, source, notes.
+- Seed file: `seed/seed.json` (git-ignored, so candidate data never goes into git). It also fills Harsh's biodata.
+- New profiles are shared with no one until Harsh ticks people.
+
+## Set up (one time, about 15 minutes)
+
+1. https://console.firebase.google.com > **Add project** (signed in as work.harshsheth@gmail.com). Analytics off.
+2. **Build > Authentication > Get started > Email/Password** > turn on **Email link (passwordless sign-in)**.
+   Leave plain Email/Password off.
+3. **Authentication > Settings > User actions**: leave "Create" on (needed for email link), turn on **Email enumeration protection**.
+4. **Build > Firestore Database > Create database**, production mode, region `asia-south1` (Mumbai).
+5. **Project settings > Your apps > Web (</>)**, register "circle". Copy the config into `public/config.js`.
+6. On a laptop: `npm install`, then `npx firebase login`, `npx firebase use --add` (pick the project),
+   then `npm run deploy`. This uploads the site and the security rules.
+7. **Authentication > Settings > Authorized domains**: the `*.web.app` domain is there already. Add a custom domain only if you use one.
+8. Open the site, sign in with work.harshsheth@gmail.com, **Profiles > Import** the seed file.
+
+No environment variables are needed. If you change the owner email, change it in both `firestore.rules` and `public/config.js`.
+
+## Run and test locally
+
+- `npm run dev` starts local Auth, Firestore and Hosting emulators. Open http://localhost:5000.
+  Sign-in links appear at http://127.0.0.1:9099/emulator/v1/projects/demo-family-review/oobCodes.
+- `npm test` runs the security rules tests (7 cases: strangers, paused people, blind rating, private notes, comment spoofing).
+- `node tests/e2e.mjs` (with `npm run dev` running) drives a real browser: owner signs in, imports, invites,
+  shares; reviewer signs in, rates, comments; a stranger is turned away. Screenshots go to `shots/`.
+
+## Later, if needed
+
+- Daily backup: Firestore export needs the paid Blaze plan; until then, copy data out by hand if wanted.
+- Password sign-in as a backup: turn on Email/Password in step 2 and add a password form. Left off to keep one way in.

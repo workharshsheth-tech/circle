@@ -1,0 +1,19 @@
+{
+  "name": "circle-family-review",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "firebase emulators:start --project demo-family-review",
+    "test": "firebase emulators:exec --only firestore --project demo-family-review \"node --test tests/rules.test.mjs\"",
+    "deploy": "firebase deploy --only hosting,firestore"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0",
+    "firebase-tools": "^14.27.0"
+  },
+  "private": true,
+  "type": "module"
+}
