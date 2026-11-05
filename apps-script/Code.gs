@@ -1,9 +1,11 @@
-// Circle intake. BUILD 13
+// Circle intake. BUILD 15
 // Runs as Harsh. Three ways a biodata reaches Circle:
 //  1. scanFolder(): every 15 minutes it looks in the Drive folder where the Seema Aunty bot saves biodatas
 //     ("From chat"), reads each new PDF / image, and adds or fills in the profile. No change to the bot needed.
 //  2. Circle's "Upload PDF" button (web app, checked against Harsh's own sign-in).
 //  3. Optional: the bot posts directly with BOT_SECRET (see docs/seema-bot.md).
+//  5. readAllBiodatas(): one-time re-read of every profile's biodata for birth date, time, place and native
+//     (fills only empty fields). Runs in rounds by itself; readAllReport() prints what it found.
 //  4. importBina(): one-time batch of Bina's "Divorced Brides 1990-1998" folder (year subfolders). It runs in
 //     5-minute rounds by itself until every file is in Circle, then stops. binaReport() prints the counts.
 // All lanes link each profile to the existing Drive file (no copies), remember every file id (seen:<id>), and
@@ -19,7 +21,7 @@
 //   FIRESTORE_BASE, IDTK_BASE (tests only) overrides for the Firestore and sign-in check addresses
 
 var STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "Waiting for Harshaben", "Harshaben matched", "Families meet", "Harsh meets her", "Going ahead", "On hold", "Pass"];
-var TEXT_FIELDS = ["name", "dob", "community", "native", "city", "education", "work", "family", "marital", "diet", "about"];
+var TEXT_FIELDS = ["name", "dob", "birthTime", "birthPlace", "community", "native", "city", "education", "work", "family", "marital", "diet", "about"];
 var HARSH_HEIGHT_IN = 66;
 
 function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k) || ""; }
@@ -261,6 +263,7 @@ function intakeGroup_(g, o) {
       if (url) fsPatch_("candidates/" + r.id, { photo: url });
     }
   }
+  if (r.ok) PropertiesService.getScriptProperties().setProperty("read15:" + r.id, "1");
   return { name: r.name, id: r.id, created: !!r.created, heightFit: r.heightFit, ocrMiss: ocrMiss };
 }
 
@@ -292,6 +295,15 @@ function parseBiodata_(text) {
   var d = parseDate_(dob); if (d) out.dob = d;
   out.community = line(/(?:sub caste|caste|cast|religion|community)\s*[:\-]\s*([^\n]{3,60})/i);
   out.native = line(/native(?: place)?\s*[:\-]\s*([^\n]{2,50})/i);
+  // Janmakshar details: time and place of birth (the most asked-for lines after native place).
+  var bt = t.match(/(?:time of birth|birth\s*time|time\s*(?:\/|&|and)\s*place|birth details[^\n]*?time)\s*[:\-]?\s*(\d{1,2}\s*[:.]\s*\d{2}\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)?)/i)
+        || (/birth|born|janm/i.test(t) && t.match(/\btime\s*[:\-]\s*(\d{1,2}\s*[:.]\s*\d{2}\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)?)/i));
+  var tm = bt && normTime_(bt[1]); if (tm) out.birthTime = tm;
+  var bp = line(/(?:place of birth|birth\s*place|born at|born in)\s*[:\-]?\s*([^\n|]{2,50})/i)
+        || line(/time\s*(?:&|and|\/)\s*place\s*[:\-]?\s*[^&,\n]*?(?:&|,)\s*([A-Za-z][^\n|]{1,40})/i)
+        || line(/birth\s*time\s*[:\-]?\s*\d{1,2}\s*[:.]\s*\d{2}\s*(?:a\.?\s*m\.?|p\.?\s*m\.?)?\s*,\s*([A-Za-z][^\n|]{1,40})/i)
+        || (/birth|born|janm/i.test(t) ? line(/(?:^|[|\n]|\s)(?<!native\s)(?<!work\s)(?<!office\s)place\s*[:\-]\s*([A-Za-z][^\n|]{1,40})/i) : "");
+  if (bp) out.birthPlace = bp.replace(/\bIST\b/i, "").replace(/[,\s]+$/, "").trim();
   out.education = line(/(?:qualification|education)\s*[:\-]\s*([^\n]{3,120})/i);
   out.work = line(/(?:occupation|profession|current work|currently working)\s*[:\-]?\s*([^\n]{3,120})/i);
   out.marital = line(/marital status\s*[:\-]\s*([^\n]{3,60})/i);
@@ -301,13 +313,23 @@ function parseBiodata_(text) {
   });
   return out;
 }
+// "1:10 pm", "5.48pm", "07:29 p.m.", "18:56" → "13:10" (24-hour, for the app's time field)
+function normTime_(s) {
+  var m = String(s || "").toLowerCase().replace(/\s+/g, "").match(/^(\d{1,2})[:.](\d{2})(a\.?m\.?|p\.?m\.?)?/);
+  if (!m) return "";
+  var h = +m[1], mi = +m[2], ap = m[3] ? m[3].charAt(0) : "";
+  if (mi > 59 || h > 23) return "";
+  if (ap === "p" && h < 12) h += 12;
+  if (ap === "a" && h === 12) h = 0;
+  return pad_(h) + ":" + pad_(mi);
+}
 function parseDate_(s) {
   if (!s) return "";
   var m = s.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
   if (m) return m[3] + "-" + pad_(m[2]) + "-" + pad_(m[1]);
-  m = s.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*,?\s+(\d{4})/i);
+  m = s.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*\s*,?\s*(\d{4})/i);
   if (m && MONTHS[m[2].toLowerCase()]) return m[3] + "-" + pad_(MONTHS[m[2].toLowerCase()]) + "-" + pad_(m[1]);
-  m = s.match(/([a-z]{3})[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+  m = s.match(/([a-z]{3})[a-z]*\s+(\d{1,2})\s*(?:st|nd|rd|th)?\s*,?\s*(\d{4})/i);
   if (m && MONTHS[m[1].toLowerCase()]) return m[3] + "-" + pad_(MONTHS[m[1].toLowerCase()]) + "-" + pad_(m[2]);
   return "";
 }
@@ -430,4 +452,52 @@ function tidySources_() {
   var all = fsFetch_(":runQuery", { method: "post", payload: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: "candidates" }], where: { fieldFilter: { field: { fieldPath: "source" }, op: "EQUAL", value: { stringValue: "Seema Aunty · From chat" } } } } }) });
   all.forEach(function (x) { if (x.document) fsPatch_("candidates/" + x.document.name.split("/").pop(), { source: "Seema Aunty" }); });
+}
+
+// ===================== One-time re-read of every profile (birth date, time, place, native) =====================
+var READ_FIELDS = ["dob", "birthTime", "birthPlace", "native", "community", "education", "work", "marital"];
+function readAllBiodatas() {
+  PropertiesService.getScriptProperties().deleteProperty("READ_REPORT");
+  return readAllRound();
+}
+function readAllRound() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { skipped: "already running" };
+  var t0 = Date.now(), props = PropertiesService.getScriptProperties();
+  var rep = JSON.parse(props.getProperty("READ_REPORT") || '{"read":0,"dob":0,"birthTime":0,"birthPlace":0,"native":0,"photos":0,"missed":[],"errors":[]}');
+  var left = 0;
+  try {
+    var all = fsFetch_(":runQuery", { method: "post", payload: JSON.stringify({ structuredQuery: { from: [{ collectionId: "candidates" }] } }) });
+    all.forEach(function (x) {
+      if (!x.document) return;
+      var id = x.document.name.split("/").pop(), d = fromFs_(x.document.fields || {});
+      var fid = String(d.pdfUrl || "").match(/\/d\/([\w-]{20,})/);
+      if (!fid || props.getProperty("read15:" + id)) return;
+      if (Date.now() - t0 > 270000) { left++; return; }
+      try {
+        var file = DriveApp.getFileById(fid[1]);
+        var found = parseBiodata_(ocrText_(file)), patch = {};
+        if (found.height && !d.heightIn) { var h = parseHeight_(found.height); if (h) patch.heightIn = h; }
+        READ_FIELDS.forEach(function (k) { if (found[k] && !d[k]) patch[k] = found[k]; });
+        if (!d.photo && file.getMimeType() === "application/pdf") {
+          var best = pickPhoto_(extractJpegs_(file.getBlob().getBytes()));
+          if (best && best.bytes.length <= 350000) { patch.photo = "data:image/jpeg;base64," + Utilities.base64Encode(best.bytes); rep.photos++; }
+        }
+        if (Object.keys(patch).length) { patch.updatedAt = new Date(); fsPatch_("candidates/" + id, patch); }
+        rep.read++;
+        ["dob", "birthTime", "birthPlace", "native"].forEach(function (k) { if (d[k] || patch[k]) rep[k]++; });
+        if (!(d.birthPlace || patch.birthPlace) || !(d.native || patch.native)) rep.missed.push(d.name);
+        props.setProperty("read15:" + id, "1");
+      } catch (e) { rep.errors.push(d.name + ": " + (e && e.message || e)); props.setProperty("read15:" + id, "1"); }
+    });
+  } finally { lock.releaseLock(); }
+  rep.remaining = left;
+  props.setProperty("READ_REPORT", JSON.stringify(rep));
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "readAllRound") ScriptApp.deleteTrigger(t); });
+  if (left > 0) ScriptApp.newTrigger("readAllRound").timeBased().after(60 * 1000).create();
+  console.log((left ? "Round done, " + left + " profiles left; next round in 1 minute. " : "All profiles read. ") + JSON.stringify(rep));
+  return rep;
+}
+function readAllReport() {
+  console.log(PropertiesService.getScriptProperties().getProperty("READ_REPORT") || "Not run yet.");
 }

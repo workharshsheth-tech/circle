@@ -13,7 +13,7 @@ await fetch(`http://127.0.0.1:9099/emulator/v1/projects/demo-family-review/accou
 const proxy = process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY, bypass: "localhost,127.0.0.1" } : undefined;
 const browser = await chromium.launch({ proxy });
 // Wait up to 10 s for something to appear (the app updates live, so checks must not race it).
-const seen = async (loc) => { try { await loc.first().waitFor({ timeout: 10000 }); return true; } catch { return false; } };
+const seen = async (loc) => { try { await loc.first().waitFor({ timeout: 15000 }); return true; } catch { return false; } };
 const ok = (c, m) => { if (!c) throw new Error("FAIL: " + m); console.log("ok -", m); };
 
 async function signIn(page, email) {
@@ -257,13 +257,22 @@ await d.fill('input[name="name"]', "Zara Manual");
 await d.click('button:has-text("Add profile")');
 await d.getByRole("heading", { name: "Zara Manual" }).waitFor();
 await di.reload(); await di.locator("details.grp").first().waitFor();
-await di.locator("details.grp").evaluateAll((ds) => ds.forEach((x) => (x.open = true)));
+await di.waitForTimeout(1500);
 ok(!(await di.getByText("Zara Manual").count()), "with sharing set to per-profile, a new profile stays private");
 await d.goto(BASE + "#/people");
 await d.click('[data-share-one="didi@example.com"]');
 await d.getByText(/Shared \d+ profile/).waitFor();
 await di.reload(); await di.locator("details.grp").first().waitFor();
-await di.locator("details.grp").evaluateAll((ds) => ds.forEach((x) => (x.open = true)));
-ok(await seen(di.getByText("Zara Manual")), "Share all gives her every open profile");
+await di.fill('input[data-filter="q"]', "Zara"); // a search opens the matching groups
+ok(await seen(di.locator(".cr", { hasText: "Zara Manual" })), "Share all gives her every open profile");
+// Native place and place of birth lead the biodata; Janmakshar can be filled from it in one tap.
+await d.goto(BASE + "#/");
+await d.locator('details.grp[data-stage="Mothers in touch"]').evaluate((x) => (x.open = true));
+await d.getByText("Pooja Vora").first().click();
+ok((await d.locator("dl.facts dt").first().textContent()) === "Native" && await seen(d.locator("dl.facts dd", { hasText: "Ghatkopar, Mumbai" })), "biodata shows Native and Place of birth first");
+await d.click('[data-act="use-bio"]');
+ok((await d.inputValue('#f-fam input[name="birthPlace"]')) === "Ghatkopar, Mumbai" && (await d.inputValue('#f-fam input[name="birthTime"]')) === "07:41"
+  && (await d.inputValue('#f-fam input[name="birthDate"]')) === "1992-04-28", "Use these fills Janmakshar from her biodata");
+await d.screenshot({ path: "shots/15-native-birthplace-1280.png", fullPage: true });
 await browser.close();
 console.log("ALL OK");

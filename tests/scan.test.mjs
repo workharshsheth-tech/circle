@@ -23,7 +23,8 @@ test("reads the usual biodata lines, and never keeps phones or emails", () => {
   assert.equal(f.community, "Dasha Shrimali Jain"); assert.equal(f.native, "Lakhtar"); assert.equal(f.marital, "Never married");
   assert.ok(!/98200|@/.test(JSON.stringify(f)));
   assert.equal(parse("DOB: 31.08.1990").dob, "1990-08-31");
-  assert.equal(parse("Born on: 11 th August 1994").dob || parse("Date of birth- 4th September 1996").dob, "1996-09-04");
+  assert.equal(parse("Born on: 11 th August 1994").dob, "1994-08-11");
+  assert.equal(parse("Date of birth- 4th September 1996").dob, "1996-09-04");
   assert.equal(parse("Height : 154 cm").height, "154 cm");
 });
 
@@ -116,4 +117,27 @@ test("Bina batch report: 3 created, 1 updated, 1 height fail; a second run does 
   assert.equal(rep.remaining, 0);
   const again = run("importBinaRound");
   assert.equal(again.created, 3); // unchanged: every file already seen
+});
+
+test("reads time and place of birth in the usual layouts", () => {
+  const c = (x) => { const f = parse(x); return [f.dob, f.birthTime, f.birthPlace, f.native].join(" | "); };
+  assert.equal(c("DOB: 02-05-1993\nTime of Birth: 1:10 pm\nPlace of Birth: Vile Parle, Mumbai\nNative Place: Lakhtar"), "1993-05-02 | 13:10 | Vile Parle, Mumbai | Lakhtar");
+  assert.equal(c("Birth Details: Date: 31.08.1990 | Time: 6:56 PM |\nPlace: Borivali, Mumbai"), "1990-08-31 | 18:56 | Borivali, Mumbai | ");
+  assert.equal(c("Date of Birth: 26th November, 1991\nTime & Place: 07:29 p.m. & Rajkot"), "1991-11-26 | 19:29 | Rajkot | ");
+  assert.equal(c("TIME/PLACE: 5.48am, Pune\nDATE OF BIRTH: 23rd Feb, 1992\nNATIVE: Patan, Gujarat"), "1992-02-23 | 05:48 | Pune | Patan, Gujarat");
+  assert.equal(c("DOB: 16th JUNE,1994. BIRTH TIME: 8:49 AM, SURAT.\nNATIVE: DEESA"), "1994-06-16 | 08:49 | SURAT | DEESA");
+  assert.equal(c("Born on: 11 th August 1994 Time: 6:28 pm\n..... Place: Bhavnagar, Gujarat"), "1994-08-11 | 18:28 | Bhavnagar, Gujarat | ");
+  assert.equal(parse("Office Place: Andheri\nNative Place: Amba").birthPlace, undefined); // not her birthplace
+});
+
+test("readAllBiodatas: every profile with a Drive biodata is read once; only empty fields are filled", async () => {
+  driveFiles.push({ id: "r1aaaaaaaaaaaaaaaaaaaaaaaaa", name: "Leena.pdf", mimeType: "application/pdf",
+    text: "Name: Leena Sanghvi\nDate of Birth: 4th March 1992\nTime of Birth: 9:15 am\nPlace of Birth: Jamnagar\nNative Place: Dhrangadhra\nCaste: Jain" });
+  await create({ name: "Leena Sanghvi", community: "Kept by Harsh", pdfUrl: "https://drive.google.com/file/d/r1aaaaaaaaaaaaaaaaaaaaaaaaa/view" });
+  const rep = run("readAllBiodatas");
+  const l = (await all()).find((c) => c.name === "Leena Sanghvi");
+  assert.equal(l.dob, "1992-03-04"); assert.equal(l.birthTime, "09:15"); assert.equal(l.birthPlace, "Jamnagar"); assert.equal(l.native, "Dhrangadhra");
+  assert.equal(l.community, "Kept by Harsh");
+  assert.ok(rep.read >= 1); assert.equal(rep.remaining, 0);
+  assert.equal(run("readAllRound").read, rep.read); // second run: nothing new read
 });

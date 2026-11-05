@@ -89,6 +89,14 @@ marital status; phones, emails and addresses are left out. New profiles: stage N
 Taller than 5′6″ still come in, as Height fail. For Bina's list, when the biodata doesn't say: age comes from the year
 folder and marital status is "Divorced". A single image biodata is linked as her biodata, not used as her photo.
 
+### Re-read every profile (one time)
+After pasting the latest `Code.gs`: pick **readAllBiodatas** › **Run**. It reads each profile's biodata in Drive again for
+**date of birth, birth time, place of birth and native place** (plus community, education, work, marital status, height,
+and a photo from inside the PDF if she has none), fills only empty fields, and continues in rounds by itself.
+**readAllReport** › Run prints how many have each detail and which ones still lack place of birth or native (check those
+PDFs by hand). New biodatas are read the same way as they arrive. On a profile, the family's Janmakshar section offers
+"From her biodata: … · Use these" to fill birth date, time and place in one tap.
+
 ### Bina batch (one time)
 After pasting the latest `Code.gs`: pick **importBina** › **Run**. It works in rounds of about 5 minutes and starts
 the next round by itself until every file is in (about 15–20 minutes for ~69 files), then stops. **binaReport** › Run

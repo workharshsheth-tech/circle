@@ -33,7 +33,7 @@ function curl(url, opt = {}) {
 }
 function blob(bytes, type, name) { let n = name; return { bytes, type, getName: () => n, setName: (x) => { n = x; } }; }
 const ctx = vm.createContext({
-  PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: (k) => { delete props[k]; } }) },
   ContentService: { MimeType: { JSON: "json" }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
   UrlFetchApp: { fetch: curl },
   ScriptApp: { getOAuthToken: () => "owner", getProjectTriggers: () => triggers.slice(),

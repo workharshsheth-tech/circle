@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 14
+// Circle · family review for Harsh. BUILD 15
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -8,11 +8,25 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
   getFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  addDoc, collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch,
+  addDoc, collection, query, where, orderBy, onSnapshot as rawSnapshot, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "14";
+export const BUILD = "15";
+// Every live update reconnects by itself if the connection drops or a fresh sign-in is still settling,
+// instead of stopping quietly (phones on patchy networks).
+function onSnapshot(ref, next, err) {
+  let un = null, stopped = false, tries = 0;
+  const sub = () => {
+    un = rawSnapshot(ref, (x) => { tries = 0; next(x); }, (e) => {
+      if (stopped) return;
+      if (tries++ < 6) setTimeout(() => { if (!stopped) sub(); }, 800 * tries);
+      else if (err) err(e);
+    });
+  };
+  sub();
+  return () => { stopped = true; if (un) un(); };
+}
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -108,6 +122,7 @@ function ageOf(c) {
   }
   return c.age || "";
 }
+function fmtClock(hhmm) { const d = new Date(`2000-01-01T${hhmm}`); return isNaN(d) ? hhmm : d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }); }
 function fmtDob(s) { const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); }
 function fmtTime(ts) {
   const d = ts?.toDate ? ts.toDate() : null; if (!d) return "just now";
@@ -227,11 +242,13 @@ async function startData() {
   const email = lc(S.user.email);
   const q = S.owner ? collection(db, "candidates") : query(collection(db, "candidates"), where("viewers", "array-contains", email));
   let first = true;
-  S.unsubs.push(onSnapshot(q, (snap) => {
+  // Live list of profiles; if the connection drops (or a sign-in is still settling), listen again shortly.
+  const listen = (tries) => S.unsubs.push(onSnapshot(q, (snap) => {
     S.cands = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }])); S.privAll = null;
     loadSummaries(); if (first) { first = false; route(); if (S.owner) moveSources(); } else rerenderSoft();
     autoShare();
-  }, (e) => toast(niceErr(e))));
+  }, (e) => { if (tries < 5 && S.user) setTimeout(() => listen(tries + 1), 1500 * (tries + 1)); else toast(niceErr(e)); }));
+  listen(0);
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "criteria"), (d) => { S.criteria = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; S.adminLoaded = true; autoShare(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(collection(db, "members"), (snap) => {
@@ -359,7 +376,7 @@ function filtered() {
     (!f.langs.length || f.langs.some((l) => langsOf(c).includes(l))) &&
     (!f.city || c.city === f.city) &&
     (!f.height || heightFit(c.heightIn) === f.height) &&
-    (!q || lc([c.name, c.city, c.community, c.work, c.education, c.source].join(" ")).includes(q)));
+    (!q || lc([c.name, c.city, c.native, c.birthPlace, c.community, c.work, c.education, c.source].join(" ")).includes(q)));
 }
 function opts(field) { return [...new Set([...S.cands.values()].map((c) => c[field]).filter(Boolean))].sort(); }
 function selChip(key, label, values, labels = values) {
@@ -369,7 +386,7 @@ function selChip(key, label, values, labels = values) {
 }
 function rowHtml(c) {
   const s = S.summaries.get(c.id) || {}, age = ageOf(c);
-  const sub = [age && `${age}`, c.city, communityGroup(c.community), c.source].filter(Boolean).join(" · ");
+  const sub = [age && `${age}`, c.native ? `Native ${c.native}` : c.city, communityGroup(c.community), c.source].filter(Boolean).join(" · ");
   let right;
   if (S.owner) right = s.count ? `<span class="score"><span class="mini-star">★</span> <b>${s.avg.toFixed(1)}</b> · ${s.count}</span>` : `<span class="score">No ratings</span>`;
   else right = s.mine ? `<span class="score">You <span class="mini-star">★</span><b>${s.mine}</b></span>` : `<span class="tag blue">Rate</span>`;
@@ -390,7 +407,7 @@ function viewList() {
     <div class="ph"><h2>${S.owner ? "Profiles" : "Profiles Harsh shared"}</h2>
       ${S.owner ? `<label class="btn sm" id="up-btn">Upload PDF<input type="file" accept="application/pdf,.pdf" hidden data-act="upload"></label><a class="btn ghost sm" href="#/import">Import</a>` : ""}</div>
     ${isDrive(S.settings.driveFolder) ? `<div class="links"><a href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">All biodata PDFs in Drive ↗</a></div>` : ""}
-    <input class="search" type="search" placeholder="Search name, city, work" value="${esc(f.q)}" data-filter="q">
+    <input class="search" type="search" placeholder="Search name, native, city, work" value="${esc(f.q)}" data-filter="q">
     <div class="filters">
       ${selChip("stage", "Stage", STAGES)}
       ${selChip("source", "Source", [...sourceList(), "Not recorded"])}
@@ -466,9 +483,10 @@ function drawDetail(c) {
   const a = document.activeElement;
   if (a && a.tagName === "TEXTAREA" && a.value) return; // never wipe a half-typed comment
   const email = lc(S.user.email), age = ageOf(c);
+  const born = [c.dob && fmtDob(c.dob), c.birthTime && fmtClock(c.birthTime)].filter(Boolean).join(" · ");
   const facts = [
-    ["Age", age ? `${age}${c.dob ? ` · born ${fmtDob(c.dob)}` : ""}` : ""],
-    ["Community", c.community], ["Native", c.native], ["Lives in", c.city],
+    ["Native", c.native], ["Place of birth", c.birthPlace], ["Born", born], ["Age", age],
+    ["Community", c.community], ["Lives in", c.city],
     ["Languages", langsOf(c).join(", ")], ["Education", c.education], ["Work", c.work], ["Family", c.family], ["Marital status", c.marital], ["Diet", c.diet],
     ["Biodata from", c.source],
   ].filter(([, v]) => v);
@@ -581,6 +599,12 @@ function bindDetail(c) {
   const fam = document.getElementById("f-fam");
   $app.querySelectorAll(".seg input, .tick input[type=checkbox]").forEach((i) => (i.onchange = () => { i.closest(".seg")?.querySelectorAll("label").forEach((l) => l.classList.toggle("on", l.querySelector("input").checked)); if (i.type === "checkbox") i.closest(".tick")?.classList.toggle("on", i.checked); }));
   if (fam) {
+    fam.querySelector('[data-act="use-bio"]')?.addEventListener("click", (e) => {
+      if (c.dob) fam.birthDate.value = c.dob;
+      if (c.birthTime) fam.birthTime.value = c.birthTime;
+      if (c.birthPlace) fam.birthPlace.value = c.birthPlace;
+      e.currentTarget.closest(".suggest").remove(); toast("Filled from her biodata. Check, then Save.");
+    });
     fam.querySelector('[data-act="wa"]').onclick = () => {
       const v = { birthName: fam.birthName.value.trim(), birthDate: fam.birthDate.value, birthTime: fam.birthTime.value, birthPlace: fam.birthPlace.value.trim() };
       if (!v.birthDate || !v.birthTime || !v.birthPlace) { toast("Fill birth date, time and place first."); return; }
@@ -665,6 +689,8 @@ function familyPartHtml() {
       ${tick("motherContacted", "1. Spoke to her mother", `<input class="in-t sm" type="date" name="contactedOn" value="${esc(p.contactedOn)}" aria-label="When">`)}
       ${tick("biodataExchanged", "2. Biodatas exchanged")}
       <div class="sub-h">3. Janmakshar</div>
+      ${!p.birthDate && !p.birthTime && !p.birthPlace && (c.dob || c.birthTime || c.birthPlace) ? `<div class="suggest"><span>From her biodata: ${esc([c.dob && fmtDob(c.dob), c.birthTime && fmtClock(c.birthTime), c.birthPlace].filter(Boolean).join(" · "))}</span>
+        <button class="btn ghost sm" type="button" data-act="use-bio">Use these</button></div>` : ""}
       <div class="row2"><label class="f"><span>Birth name</span><input class="in-t" name="birthName" maxlength="60" value="${esc(p.birthName)}"></label>
         <label class="f"><span>Place of birth</span><input class="in-t" name="birthPlace" maxlength="60" value="${esc(p.birthPlace)}"></label></div>
       <div class="row2"><label class="f"><span>Birth date</span><input class="in-t" type="date" name="birthDate" value="${esc(p.birthDate || "")}">${!p.birthDate && c.dob ? `<span class="hint">Biodata says ${esc(fmtDob(c.dob))}</span>` : ""}</label>
@@ -843,8 +869,9 @@ function pickAndCrop(urls) {
 
 // ---------- add / edit ----------
 const FIELDS = [
-  ["name", "Full name", "text", true], ["dob", "Date of birth", "date"], ["age", "Age (if no date of birth)", "number"],
-  ["community", "Community", "text"], ["native", "Native place", "text"], ["city", "Lives in (city / area)", "text"],
+  ["name", "Full name", "text", true], ["native", "Native place", "text"], ["birthPlace", "Place of birth", "text"],
+  ["dob", "Date of birth", "date"], ["birthTime", "Birth time", "time"], ["age", "Age (if no date of birth)", "number"],
+  ["community", "Community", "text"], ["city", "Lives in (city / area)", "text"],
   ["education", "Education", "text"], ["work", "Work", "text"], ["family", "Family", "text"],
   ["marital", "Marital status", "text"], ["diet", "Diet", "text"],
 ];
@@ -878,9 +905,9 @@ function viewEdit(id) {
         ${id && isDrive(c.pdfUrl) && driveId(c.pdfUrl) ? ` <button class="btn ghost sm" type="button" data-act="frombio">From biodata</button>` : ""}
         ${photo ? ` <button class="btn plain sm" type="button" data-act="nophoto">Remove</button>` : ""}<div class="hint" style="margin-top:6px">Kept small, only in this app.</div></div></div>
       <label class="f"><span>Stage</span><select class="in-t" name="stage">${STAGES.map((s) => `<option ${s === stageOf(c) ? "selected" : ""}>${s}</option>`).join("")}</select></label>
-      ${FIELDS.slice(0, 3).map(fieldHtml(c)).join("")}
+      ${FIELDS.slice(0, 6).map(fieldHtml(c)).join("")}
       <label class="f"><span>Height</span>${heightSelects(c.heightIn)}</label>
-      ${FIELDS.slice(3).map(fieldHtml(c)).join("")}
+      ${FIELDS.slice(6).map(fieldHtml(c)).join("")}
       <label class="f"><span>Biodata came from</span><input class="in-t" name="source" list="src-list" value="${esc(c.source)}" placeholder="Pratima Ben, Bina Ben, matrimonial site…"></label>
       <datalist id="src-list">${sourceList().map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
       <div class="f"><span class="lbl">Languages</span><div class="seg multi">${LANGS.map((l) => `<label class="${langsOf(c).includes(l) ? "on" : ""}"><input type="checkbox" name="lang" value="${l}" ${langsOf(c).includes(l) ? "checked" : ""}>${l}</label>`).join("")}</div></div>
@@ -952,7 +979,7 @@ function normCand(r) {
       city: pick("city", "livesin", "location"), education: pick("education"), work: pick("work", "profession", "occupation"),
       family: pick("family"), marital: pick("marital", "maritalstatus"), diet: pick("diet"), about: pick("about", "notesforfamily"),
       pdfUrl: isDrive(pick("pdfUrl", "pdfurl", "pdf")) ? pick("pdfUrl", "pdfurl", "pdf") : "",
-      source: pick("source", "from"), languages: pick("languages", "language").split(/[,/]/).map((x) => x.trim()).filter((x) => LANGS.includes(x)),
+      source: pick("source", "from"), birthTime: pick("birthTime", "birthtime", "timeofbirth"), birthPlace: pick("birthPlace", "birthplace", "placeofbirth"), languages: pick("languages", "language").split(/[,/]/).map((x) => x.trim()).filter((x) => LANGS.includes(x)),
       stage, photo: "", sharedWith: [], viewers: [], hidden: false, archived: false },
     p: { contact: pick("contact", "phone"), source: pick("source", "from"), notes: pick("notes", "privatenotes") },
   };

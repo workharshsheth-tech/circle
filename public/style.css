@@ -1,4 +1,4 @@
-/* Circle · family review. BUILD 14 */
+/* Circle · family review. BUILD 15 */
 :root{
   --blue:#1c3fae; --blue-ink:#14307f; --blue-soft:#eaf0ff; --blue-line:#cdd8fb;
   --sun:#f5a300; --sun-soft:#fff1cc; --sun-ink:#9a5b00;
@@ -239,3 +239,6 @@ details.chip.ms>summary::-webkit-details-marker{display:none}
 .people .p{flex-wrap:wrap}
 .people .p .m{flex:1 1 180px}
 .people .p .acts{display:flex;gap:6px;align-items:center;margin-left:auto}
+/* BUILD 15: Janmakshar from biodata */
+.suggest{display:flex;align-items:center;gap:10px;background:var(--sun-soft);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:14px}
+.suggest span{flex:1}
