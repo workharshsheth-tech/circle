@@ -97,11 +97,20 @@ and a photo from inside the PDF if she has none), fills only empty fields, and c
 PDFs by hand). New biodatas are read the same way as they arrive. On a profile, the family's Janmakshar section offers
 "From her biodata: … · Use these" to fill birth date, time and place in one tap.
 
-### Bina batch (one time)
-After pasting the latest `Code.gs`: pick **importBina** › **Run**. It works in rounds of about 5 minutes and starts
-the next round by itself until every file is in (about 15–20 minutes for ~69 files), then stops. **binaReport** › Run
-prints: created, updated (already in Circle), height pass / fail / unknown, which ones the text reading couldn't
-read (check those PDFs by hand) and any errors. Running it again later does nothing new.
+### Bina's list (filtered, refreshes about every 10 days)
+Only girls **born 1990–1998** with **height up to 5′6″** come in, with source **Bina · Divorced Brides**, stage New,
+and the PDF linked where it already is (no copies). Taller girls and other birth years are left out. A height that
+can't be read is flagged for checking by hand (in Harsh's height-checked copy folder it's treated as already passed).
+A girl already in Circle is only filled in; if her old file was deleted, her link moves to the new copy.
+An earlier unfiltered import's out-of-range profiles are archived (Profiles › Archived), not deleted.
+
+- **Circle › Sources › Check Bina's folder** starts a check (needs the intake web app on the newest version), and it
+  also runs by itself every morning once `installTrigger` has been run again.
+- First time: `importBina` (same thing, run from the script). `binaReport` prints added, already there, and left out
+  with the reason (too tall / born outside 1990–98 / height not readable).
+- The folder checked is Harsh's copy **From Bina · Divorced Brides** unless script property `BINA_FOLDER_ID` is set.
+  To read Bina Ben's own folder directly (1khf2FsrLDpore9Jyz15eD6FczWSiGjdH, 1964–1996), it must be shared with
+  work.harshsheth@gmail.com; then set `BINA_FOLDER_ID` to it. The same filters apply.
 
 ### Set up the script (one time, about 10 minutes)
 

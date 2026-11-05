@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 15
+// Circle · family review for Harsh. BUILD 16
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "15";
+export const BUILD = "16";
 // Every live update reconnects by itself if the connection drops or a fresh sign-in is still settling,
 // instead of stopping quietly (phones on patchy networks).
 function onSnapshot(ref, next, err) {
@@ -249,6 +249,7 @@ async function startData() {
     autoShare();
   }, (e) => { if (tries < 5 && S.user) setTimeout(() => listen(tries + 1), 1500 * (tries + 1)); else toast(niceErr(e)); }));
   listen(0);
+  if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "imports"), (d) => { S.imports = d.exists() ? d.data() : {}; if (S.route === "#/sources") rerenderSoft(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "criteria"), (d) => { S.criteria = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; S.adminLoaded = true; autoShare(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(collection(db, "members"), (snap) => {
@@ -770,6 +771,29 @@ function viewCriteria() {
   };
 }
 
+// ---------- Bina's list: refreshes about every 10 days; check her folder for new biodatas ----------
+function binaCard() {
+  const b = (S.imports || {}).bina || {}, when = b.lastRun?.toDate ? b.lastRun.toDate() : null;
+  const ago = when ? Math.round((Date.now() - when) / 864e5) : null;
+  const last = b.running ? `Checking now… new girls appear below as they're read${b.created ? ` (${b.created} so far)` : ""}.`
+    : when ? `Last checked ${ago === 0 ? "today" : ago === 1 ? "yesterday" : ago + " days ago"}: ${b.created || 0} new${b.updated ? `, ${b.updated} already here` : ""}${b.skippedTall ? `, ${b.skippedTall} too tall` : ""}${b.skippedOld ? `, ${b.skippedOld} outside 1990–98` : ""}${b.skippedNoHeight ? `, ${b.skippedNoHeight} to check by hand` : ""}.`
+    : "Not checked from Circle yet.";
+  const names = !b.running && b.newNames && b.newNames.length ? `<div class="hint" style="margin-top:6px">New: ${b.newNames.map(esc).join(", ")}</div>` : "";
+  return `<section class="card bina"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px"><b>Bina · Divorced Brides</b><div class="hint">Born 1990–98, height up to 5′6″ only. ${esc(last)} Also checked by itself every morning.</div>${names}</div>
+      <button class="btn sm" data-act="bina-update" ${b.running ? "disabled" : ""}>${b.running ? "Checking…" : "Check Bina's folder"}</button></div></section>`;
+}
+async function updateBina(e) {
+  if (!S.admin.intakeUrl) { toast("Add the intake link first: Family › Setup."); location.hash = "#/people"; return; }
+  const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Starting…";
+  try {
+    const idToken = await S.user.getIdToken();
+    const r = await (await fetch(S.admin.intakeUrl, { method: "POST", body: JSON.stringify({ idToken, action: "updateBina" }) })).json();
+    if (!r.ok) throw new Error(r.error || "Couldn't start");
+    toast("Checking Bina's folder. Only new biodatas are read.");
+  } catch (err) { toast(niceErr(err)); btn.disabled = false; btn.textContent = "Check Bina's folder"; }
+}
+
 // ---------- Sources: where every biodata came from (only Harsh) ----------
 async function loadPrivAll() {
   const ids = [...S.cands.keys()], out = {};
@@ -784,12 +808,14 @@ function viewSources() {
   $app.innerHTML = shell(`
     <div class="ph"><h2>Sources</h2></div>
     <p class="hint" style="margin-top:-6px">Where each biodata came from. Set it on a profile under Edit › "Biodata came from".</p>
+    ${binaCard()}
     ${keys.length ? keys.map((k) => `<details class="grp" data-src="${esc(k)}" ${S.open.has("src:" + k) ? "open" : ""}>
       <summary><span class="dot"></span>${esc(k)}<span class="n">${by[k].length}</span><span class="sp"></span>
         <span class="hint">${by[k].filter(past).length} moved ahead</span><span class="car"></span></summary>
       ${by[k].sort((a, b) => a.name.localeCompare(b.name)).map((c) => `<a class="cr" href="#/c/${c.id}"><div class="av">${c.photo ? `<img src="${c.photo}" alt="">` : esc(initials(c.name))}</div>
         <div class="m"><div class="nm">${esc(c.name)}</div><div class="sub">${esc(stageOf(c))}</div></div><div class="r">${heightTag(c.heightIn)}</div></a>`).join("")}
     </details>`).join("") : `<div class="empty">No profiles yet.</div>`}`, "sources");
+  $app.querySelector('[data-act="bina-update"]')?.addEventListener("click", updateBina);
   $app.querySelectorAll("details.grp").forEach((d) => d.addEventListener("toggle", () => { const k = "src:" + d.dataset.src; d.open ? S.open.add(k) : S.open.delete(k); }));
 }
 

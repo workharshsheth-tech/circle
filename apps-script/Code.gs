@@ -1,4 +1,4 @@
-// Circle intake. BUILD 15
+// Circle intake. BUILD 17
 // Runs as Harsh. Three ways a biodata reaches Circle:
 //  1. scanFolder(): every 15 minutes it looks in the Drive folder where the Seema Aunty bot saves biodatas
 //     ("From chat"), reads each new PDF / image, and adds or fills in the profile. No change to the bot needed.
@@ -6,6 +6,8 @@
 //  3. Optional: the bot posts directly with BOT_SECRET (see docs/seema-bot.md).
 //  5. readAllBiodatas(): one-time re-read of every profile's biodata for birth date, time, place and native
 //     (fills only empty fields). Runs in rounds by itself; readAllReport() prints what it found.
+//  6. Bina's list refreshes about every 10 days: Circle's Sources tab has "Check Bina's folder" (updateBina), and a
+//     daily check runs by itself (installTrigger). Only new files are read; repeats merge into the girl already there.
 //  4. importBina(): one-time batch of Bina's "Divorced Brides 1990-1998" folder (year subfolders). It runs in
 //     5-minute rounds by itself until every file is in Circle, then stops. binaReport() prints the counts.
 // All lanes link each profile to the existing Drive file (no copies), remember every file id (seen:<id>), and
@@ -34,6 +36,7 @@ function doPost(e) {
     var body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
     var who = authorise_(body);
     if (!who) return json_({ ok: false, error: "not allowed" });
+    if (body.action === "updateBina") return json_(who === "harsh" ? updateBina_(true) : { ok: false, error: "not allowed" });
     if (body.action === "photos") return who === "harsh" ? json_(photoChoices_(body.fileId)) : json_({ ok: false, error: "not allowed" });
     return json_(intake_(body, who));
   } catch (err) {
@@ -91,6 +94,8 @@ function intake_(body, who) {
     Object.keys(c).forEach(function (k) { if (existing.data[k] == null || existing.data[k] === "") patch[k] = c[k]; });
     // A PDF Harsh uploads himself replaces the link; from folders and the bot it only fills an empty one.
     if (c.pdfUrl && who === "harsh") patch.pdfUrl = c.pdfUrl;
+    // Her old file was deleted or trashed (e.g. Bina's list refreshed): point to the new copy instead.
+    if (c.pdfUrl && existing.data.pdfUrl && c.pdfUrl !== existing.data.pdfUrl && !driveFileAlive_(existing.data.pdfUrl)) patch.pdfUrl = c.pdfUrl;
     patch.updatedAt = new Date();
     fsPatch_("candidates/" + existing.id, patch);
     return { ok: true, id: existing.id, updated: true, name: existing.data.name, heightFit: heightFit,
@@ -109,6 +114,11 @@ function intake_(body, who) {
   return { ok: true, id: id, created: true, name: c.name, heightFit: heightFit, stage: stage };
 }
 
+function driveFileAlive_(url) {
+  var m = String(url || "").match(/\/d\/([\w-]{20,})/);
+  if (!m) return false;
+  try { return !DriveApp.getFileById(m[1]).isTrashed(); } catch (e) { return false; }
+}
 function saveToFolder_(blob) {
   var f = DriveApp.getFolderById(prop_("FOLDER_ID")).createFile(blob);
   return { id: f.getId(), name: f.getName() };
@@ -172,6 +182,7 @@ function val_(v) {
   if (v === null || v === undefined) return { nullValue: null };
   if (v instanceof Date) return { timestampValue: v.toISOString() };
   if (Array.isArray(v)) return { arrayValue: { values: v.map(val_) } };
+  if (typeof v === "object") return { mapValue: { fields: toFs_(v) } };
   if (typeof v === "boolean") return { booleanValue: v };
   if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
   return { stringValue: String(v) };
@@ -208,7 +219,7 @@ function scanLane_(o) {
       var it = folder.getFiles();
       while (it.hasNext()) {
         var f = it.next(), mt = f.getMimeType();
-        if (!/^application\/pdf$|^image\//.test(mt)) continue;
+        if (!/^application\/pdf$|^image\//.test(mt) || (f.isTrashed && f.isTrashed())) continue;
         var name = nameFromFile_(f.getName()), key = normName_(name);
         if (!key || key === owner) continue;
         (groups[key] = groups[key] || { name: name, files: [], path: path }).files.push(f);
@@ -225,8 +236,9 @@ function scanLane_(o) {
       var fresh = g.files.filter(function (f) { return !props.getProperty("seen:" + f.getId()); });
       if (!fresh.length) { already++; continue; }
       if ((o.maxGroups && done.length >= o.maxGroups) || Date.now() - t0 > budget) { left++; continue; }
-      var r;
-      try { r = intakeGroup_(g, o); } catch (e) { r = { name: g.name, error: String(e && e.message || e) }; }
+      var r, why = o.preFilter ? o.preFilter(g) : null;
+      if (why) r = { name: g.name, skipped: why };
+      else { try { r = intakeGroup_(g, o); } catch (e) { r = { name: g.name, error: String(e && e.message || e) }; } }
       done.push(r);
       if (!r.error) g.files.forEach(function (f) { props.setProperty("seen:" + f.getId(), "1"); });
     }
@@ -248,6 +260,8 @@ function intakeGroup_(g, o) {
   ocrMiss = !Object.keys(fields).some(function (k) { return k !== "name"; });
   fields.name = fields.name && normName_(fields.name) === normName_(g.name) ? fields.name : g.name;
   if (o.defaults) o.defaults(fields, g);
+  var why = o.filter ? o.filter(fields, g) : null;
+  if (why) return { name: g.name, skipped: why, ocrMiss: ocrMiss };
   var r = intake_({ driveFileId: doc.getId(), fields: fields, source: (g.path || []).concat([doc.getName()]).join(" / "), sourceLabel: o.source }, "folder");
   if (r.ok) {
     var cur = fsFetch_("/candidates/" + r.id, { method: "get" });
@@ -348,7 +362,9 @@ function setupCheck() {
 function installTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "scanFolder") ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger("scanFolder").timeBased().everyMinutes(15).create();
-  console.log("Circle now checks the folder every 15 minutes.");
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "binaDaily") ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("binaDaily").timeBased().everyDays(1).atHour(7).create();
+  console.log("Circle now checks From chat every 15 minutes and Bina's folder every morning around 7.");
 }
 
 // ===================== Her photo from inside the biodata =====================
@@ -409,30 +425,65 @@ function photoChoices_(fileId) {
 
 // ===================== One-time batch: Bina's "Divorced Brides 1990-1998" =====================
 // Already on Drive in year folders (1990 … 1996). Nothing is copied or moved: profiles link to those files.
-var BINA_FOLDER = "1WlhAJO4L12Lj8zPqQzC0-IPh9-IVdtkj";
+var BINA_FOLDER = "1WlhAJO4L12Lj8zPqQzC0-IPh9-IVdtkj"; // override with script property BINA_FOLDER_ID if Bina's folder moves
+function binaFolder_() { return prop_("BINA_FOLDER_ID") || BINA_FOLDER; }
 var BINA_LABEL = "Bina · Divorced Brides";
+// Bina's list is filtered, not dumped: born 1990–1998 and height at or under 5′6″. Taller girls are not added.
+var BINA_YEARS = [1990, 1998];
+var BINA_COPY = "1WlhAJO4L12Lj8zPqQzC0-IPh9-IVdtkj"; // Harsh's copy, already height-checked by Bina's filter
+function yearOf_(g, fields) {
+  var y = (g.path || []).map(Number).filter(function (n) { return n >= 1900 && n <= 2015; })[0];
+  if (!y && fields && fields.dob) y = +String(fields.dob).slice(0, 4);
+  return y || 0;
+}
+function binaPreFilter_(g) {
+  var y = yearOf_(g);
+  if (y && (y < BINA_YEARS[0] || y > BINA_YEARS[1])) return "born " + y;
+  return null;
+}
+function binaFilter_(fields, g) {
+  var y = yearOf_(g, fields);
+  if (!y) return "birth year not known";
+  if (y < BINA_YEARS[0] || y > BINA_YEARS[1]) return "born " + y;
+  var h = parseHeight_(fields.heightIn != null ? fields.heightIn : fields.height);
+  if (h && h > HARSH_HEIGHT_IN) return "too tall (" + Math.floor(h / 12) + "′" + (h % 12) + "″)";
+  // In Harsh's copy every girl already passed height; elsewhere an unreadable height is flagged, not guessed.
+  if (!h && binaFolder_() !== BINA_COPY) return "height not readable";
+  return null;
+}
 var PARENT_FOLDER_URL = "https://drive.google.com/drive/folders/13AhRjQVi2val9F5fq55C7HK2aZnyC3WT";
 
 // Run this once. It keeps going in 5-minute rounds by itself until every file is in, then stops.
 function importBina() {
   tidySources_();
+  pruneBina_();
   fsPatch_("reference/settings", { driveFolder: PARENT_FOLDER_URL });
   return importBinaRound();
 }
 function importBinaRound() {
-  var r = scanLane_({ folderId: BINA_FOLDER, source: BINA_LABEL, recurse: true, budgetMs: 270000, defaults: binaDefaults_ });
+  var r = scanLane_({ folderId: binaFolder_(), source: BINA_LABEL, recurse: true, budgetMs: 270000, defaults: binaDefaults_,
+    preFilter: binaPreFilter_, filter: binaFilter_ });
   if (r.skipped) return r;
   var props = PropertiesService.getScriptProperties();
-  var rep = JSON.parse(props.getProperty("BINA_REPORT") || '{"created":0,"updated":0,"failed":[],"pass":0,"fail":0,"unknown":0,"ocrMiss":[],"errors":[]}');
+  var rep = JSON.parse(props.getProperty("BINA_REPORT") || '{"created":0,"updated":0,"failed":[],"pass":0,"fail":0,"unknown":0,"ocrMiss":[],"errors":[],"newNames":[]}');
+  rep.newNames = rep.newNames || []; rep.already = rep.already || []; rep.skipped = rep.skipped || {};
   r.processed.forEach(function (x) {
     if (x.error) { rep.errors.push(x.name + ": " + x.error); return; }
+    if (x.skipped) { var k = /^born/.test(x.skipped) ? "tooOld" : /tall/.test(x.skipped) ? "tooTall" : /height/.test(x.skipped) ? "noHeight" : "noYear";
+      (rep.skipped[k] = rep.skipped[k] || []).push(x.name + " (" + x.skipped + ")"); return; }
     x.created ? rep.created++ : rep.updated++;
+    if (x.created) rep.newNames.push(x.name); else rep.already.push(x.name);
     rep[x.heightFit] = (rep[x.heightFit] || 0) + 1;
     if (x.heightFit === "fail") rep.failed.push(x.name);
     if (x.ocrMiss) rep.ocrMiss.push(x.name);
   });
   rep.total = r.total; rep.remaining = r.remaining;
   props.setProperty("BINA_REPORT", JSON.stringify(rep));
+  // What Circle's Sources tab shows (only Harsh can read admin/*).
+  fsPatch_("admin/imports", { bina: { running: r.remaining > 0, lastRun: new Date(), files: r.total || 0, created: rep.created, updated: rep.updated,
+    newNames: rep.newNames.slice(-30), unreadable: rep.ocrMiss.length, errors: rep.errors.length, remaining: r.remaining,
+    skippedTall: (rep.skipped.tooTall || []).length, skippedOld: (rep.skipped.tooOld || []).length,
+    skippedNoHeight: (rep.skipped.noHeight || []).length + (rep.skipped.noYear || []).length } });
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "importBinaRound") ScriptApp.deleteTrigger(t); });
   if (r.remaining > 0) ScriptApp.newTrigger("importBinaRound").timeBased().after(60 * 1000).create();
   console.log((r.remaining ? "Round done, " + r.remaining + " girls left; next round starts in 1 minute. " : "Bina batch finished. ") + JSON.stringify(rep));
@@ -444,8 +495,39 @@ function binaDefaults_(fields, g) {
   if (!fields.dob && !fields.age && yr) fields.age = new Date().getFullYear() - yr;
   if (!fields.marital) fields.marital = "Divorced";
 }
+// "Check Bina's folder": start a fresh check now. From Circle the work runs a second later in the background,
+// so the button answers at once; the Sources tab updates as girls come in.
+function updateBina_(fromCircle) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("BINA_REPORT", JSON.stringify({ created: 0, updated: 0, failed: [], pass: 0, fail: 0, unknown: 0, ocrMiss: [], errors: [], newNames: [], already: [], skipped: {} }));
+  pruneBina_();
+  fsPatch_("admin/imports", { bina: { running: true, startedAt: new Date() } });
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "importBinaRound") ScriptApp.deleteTrigger(t); });
+  if (fromCircle) { ScriptApp.newTrigger("importBinaRound").timeBased().after(1000).create(); return { ok: true, started: true }; }
+  return importBinaRound();
+}
+function updateBina() { return updateBina_(false); }
+// Daily, by itself (installTrigger): Bina's list refreshes about every 10 days, so a new batch shows up within a day.
+function binaDaily() { return updateBina_(false); }
 function binaReport() {
   console.log(PropertiesService.getScriptProperties().getProperty("BINA_REPORT") || "Not run yet.");
+}
+// An earlier import added Bina's girls unfiltered. Archive (not delete) any that break the filters, so Circle shows
+// only the filtered list; Harsh can still find them under Profiles › Archived.
+function pruneBina_() {
+  var all = fsFetch_(":runQuery", { method: "post", payload: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: "candidates" }], where: { fieldFilter: { field: { fieldPath: "source" }, op: "EQUAL", value: { stringValue: BINA_LABEL } } } } }) });
+  var n = 0, yr = new Date().getFullYear();
+  all.forEach(function (x) {
+    if (!x.document) return;
+    var d = fromFs_(x.document.fields || {});
+    if (d.archived) return;
+    var y = d.dob ? +String(d.dob).slice(0, 4) : (d.age ? yr - d.age : 0);
+    var bad = (d.heightIn && d.heightIn > HARSH_HEIGHT_IN) || (y && (y < BINA_YEARS[0] - 1 || y > BINA_YEARS[1] + 1));
+    if (bad) { fsPatch_("candidates/" + x.document.name.split("/").pop(), { archived: true, viewers: [] }); n++; }
+  });
+  if (n) console.log("Archived " + n + " Bina profiles outside the filters.");
+  return n;
 }
 // Older imports said "Seema Aunty · From chat"; one name per source keeps the Sources tab and filter clean.
 function tidySources_() {

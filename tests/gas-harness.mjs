@@ -18,7 +18,7 @@ const iter = (a) => { let i = 0; return { hasNext: () => i < a.length, next: () 
 const folderObj = (id) => { const d = driveFolders[id]; return { getName: () => d.name,
   getFiles: () => iter(d.files.map((fid) => fileObj(driveFiles.find((x) => x.id === fid)))),
   getFolders: () => iter((d.folders || []).map(folderObj)) }; };
-const fileObj = (f) => ({ getId: () => f.id, getName: () => f.name, getMimeType: () => f.mimeType,
+const fileObj = (f) => ({ isTrashed: () => !!f.trashed, getId: () => f.id, getName: () => f.name, getMimeType: () => f.mimeType,
   getBlob: () => ({ fileId: f.id, getBytes: () => [...(f.bytes || [])] }), getThumbnail: () => (f.thumb ? { getBytes: () => Buffer.from(f.thumb) } : null) });
 function curl(url, opt = {}) {
   const ex = url.match(/drive\/v3\/files\/ocr_(.+)\/export/);
@@ -43,7 +43,7 @@ const ctx = vm.createContext({
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Drive: { Files: { create: (meta, blob) => ({ id: "ocr_" + blob.fileId }), remove() {} } },
   console: { log() {}, warn() {} },
-  DriveApp: { getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)), getFolderById: (id) => driveFolders[id] ? folderObj(id) : ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
+  DriveApp: { getFileById: (id) => fileObj(driveFiles.find((x) => x.id === id)), getFolderById: (id) => driveFolders[id] ? folderObj(id) : ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; driveFiles.push({ id: fid, name: b.getName(), mimeType: "application/pdf" }); return { getId: () => fid, getName: () => b.getName() }; } }) },
 });
 vm.runInContext(readFileSync("apps-script/Code.gs", "utf8"), ctx);
 export const props_ = props;

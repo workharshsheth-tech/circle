@@ -78,45 +78,72 @@ test("Photo from biodata: only Harsh gets the pictures, best first", async () =>
   assert.equal(first.readUInt16BE(i + 7), 300);
 });
 
-test("Bina batch: year folders, linked not copied, merged by name, report counts", async () => {
-  // Already in Circle from the chat lane, with Harsh's own PDF link and the old source label.
+test("Bina batch: filtered (born 1990–98, up to 5′6″), linked not copied, merged by name", async () => {
+  // Already in Circle from the chat lane, with Harsh's own PDF link (a live file) and the old source label.
+  driveFiles.push({ id: "KEEP_ME_000000000000000", name: "Riya.pdf", mimeType: "application/pdf" });
   await create({ name: "Riya Kapadia Two", city: "Pune", stage: "New", pdfUrl: "https://drive.google.com/file/d/KEEP_ME_000000000000000/view", source: "Seema Aunty · From chat" });
+  // From an earlier unfiltered import: a tall Bina girl that should now be archived.
+  await create({ name: "Old Tall Import", source: "Bina · Divorced Brides", heightIn: 69, stage: "New" });
   driveFiles.push(
-    { id: "b1", name: "Kriti Shah - My Biodata (2).pdf", mimeType: "application/pdf", text: "Name: Kriti Shah\nHeight : 5'4\"\nCaste: Jain\nDate of Birth: 12/03/1991" },
+    { id: "b1", name: "Kriti Shah - My Biodata (2).pdf", mimeType: "application/pdf", text: "Name: Kriti Shah\nHeight : 5'4\"\nCaste: Jain\nDate of Birth: 12/03/1991\nPlace of Birth: Rajkot" },
     { id: "b2", name: "Heena Doshi - photo_2023-09-15_14-59-36.jpg", mimeType: "image/jpeg", text: "Heena Doshi\nEducation: B.Com" },
     { id: "b3", name: "Tara Vyas - Tara biodata - Mina Vyas.pdf", mimeType: "application/pdf", text: "Height: 5 ft 8 in" },
-    { id: "b4", name: "Riya Kapadia Two - IMG-20260328-WA0060 - Sonal Kapadia.jpg", mimeType: "image/jpeg", text: "Height: 5'2\"" });
+    { id: "b4", name: "Riya Kapadia Two - IMG-20260328-WA0060 - Sonal Kapadia.jpg", mimeType: "image/jpeg", text: "Height: 5'2\"" },
+    { id: "b5", name: "Old Year Girl - biodata.pdf", mimeType: "application/pdf", text: "Height: 5'1\"" });
   Object.assign(driveFolders, {
-    bina: { name: "From Bina", files: [], folders: ["y91", "y93"] },
-    y91: { name: "1991", files: ["b1", "b2"] }, y93: { name: "1993", files: ["b3", "b4"] } });
+    bina: { name: "From Bina", files: [], folders: ["y88", "y91", "y93"] },
+    y88: { name: "1988", files: ["b5"] }, y91: { name: "1991", files: ["b1", "b2"] }, y93: { name: "1993", files: ["b3", "b4"] } });
   const savedBefore = saved.length;
   run("(BINA_FOLDER = 'bina', importBina)"); // point the batch at the fake folder tree
   const all2 = await all(), by = (n) => all2.find((c) => c.name === n);
-  // linked to the same Drive files; nothing written to Drive
-  assert.equal(saved.length, savedBefore);
-  assert.match(by("Kriti Shah").pdfUrl, /\/d\/b1\//); assert.equal(by("Kriti Shah").source, "Bina · Divorced Brides");
-  assert.equal(by("Kriti Shah").heightIn, "64"); assert.equal(by("Kriti Shah").dob, "1991-03-12"); assert.equal(by("Kriti Shah").marital, "Divorced");
-  // a lone image is her biodata: linked, not used as her photo; age from the year folder
-  assert.match(by("Heena Doshi").pdfUrl, /\/d\/b2\//); assert.ok(!by("Heena Doshi").photo);
-  assert.equal(by("Heena Doshi").age, String(new Date().getFullYear() - 1991));
-  // taller girls are still created, as height fail
-  assert.equal(by("Tara Vyas").heightIn, "68"); assert.equal(by("Tara Vyas").stage, "New");
-  // same girl as before: only empty fields filled; her existing PDF link and city kept; old source label tidied
+  assert.equal(saved.length, savedBefore); // nothing written to Drive
+  const k = by("Kriti Shah");
+  assert.match(k.pdfUrl, /\/d\/b1\//); assert.equal(k.source, "Bina · Divorced Brides"); assert.equal(k.heightIn, "64");
+  assert.equal(k.dob, "1991-03-12"); assert.equal(k.birthPlace, "Rajkot"); assert.equal(k.marital, "Divorced"); assert.equal(k.stage, "New");
+  assert.equal(by("Tara Vyas"), undefined, "too tall: not added");
+  assert.equal(by("Old Year Girl"), undefined, "born 1988: not added");
+  assert.equal(by("Heena Doshi"), undefined, "height unreadable outside Harsh's checked copy: flagged, not added");
   const riya = all2.filter((c) => c.name === "Riya Kapadia Two");
   assert.equal(riya.length, 1); assert.match(riya[0].pdfUrl, /KEEP_ME/); assert.equal(riya[0].city, "Pune");
   assert.equal(riya[0].heightIn, "62"); assert.equal(riya[0].source, "Seema Aunty");
-  // report and the family's "All biodata PDFs" link
+  assert.equal(by("Old Tall Import").archived, true, "earlier unfiltered import archived");
   const settings = await (await fetch(`${FS}/v1/projects/${P}/databases/(default)/documents/reference/settings`, { headers: { Authorization: "Bearer owner" } })).json();
   assert.match(settings.fields.driveFolder.stringValue, /13AhRjQVi2val9F5fq55C7HK2aZnyC3WT/);
-  assert.equal(triggers.filter((x) => x.getHandlerFunction() === "importBinaRound").length, 0); // finished, no next round
+  assert.equal(triggers.filter((x) => x.getHandlerFunction() === "importBinaRound").length, 0);
 });
 
-test("Bina batch report: 3 created, 1 updated, 1 height fail; a second run does nothing", () => {
+test("Bina report names what was added, merged and left out, and why", () => {
   const rep = JSON.parse(run("(function(){ return PropertiesService.getScriptProperties().getProperty('BINA_REPORT'); })"));
-  assert.equal(rep.created, 3); assert.equal(rep.updated, 1); assert.equal(rep.fail, 1); assert.deepEqual(rep.failed, ["Tara Vyas"]);
-  assert.equal(rep.remaining, 0);
-  const again = run("importBinaRound");
-  assert.equal(again.created, 3); // unchanged: every file already seen
+  assert.equal(rep.created, 1); assert.deepEqual(rep.newNames, ["Kriti Shah"]);
+  assert.equal(rep.updated, 1); assert.deepEqual(rep.already, ["Riya Kapadia Two"]);
+  assert.match(rep.skipped.tooTall[0], /Tara Vyas \(too tall \(5′8″\)\)/);
+  assert.match(rep.skipped.tooOld[0], /Old Year Girl \(born 1988\)/);
+  assert.match(rep.skipped.noHeight[0], /Heena Doshi/);
+  assert.equal(run("importBinaRound").created, 1); // second run: every file already seen
+});
+
+test("Check Bina's folder (from Circle): only Harsh can start it; it runs in the background and reports to Circle", async () => {
+  const k = "?key=demo-key", base = `${AU}/identitytoolkit.googleapis.com/v1`, h = { "Content-Type": "application/json" };
+  await fetch(`${AU}/emulator/v1/projects/${P}/accounts`, { method: "DELETE" });
+  const up = await (await fetch(`${base}/accounts:signUp${k}`, { method: "POST", headers: h, body: JSON.stringify({ email: "work.harshsheth@gmail.com", password: "pw123456", returnSecureToken: true }) })).json();
+  await fetch(`${base}/projects/${P}/accounts:update`, { method: "POST", headers: { ...h, Authorization: "Bearer owner" }, body: JSON.stringify({ localId: up.localId, emailVerified: true }) });
+  const tok = (await (await fetch(`${base}/accounts:signInWithPassword${k}`, { method: "POST", headers: h, body: JSON.stringify({ email: "work.harshsheth@gmail.com", password: "pw123456", returnSecureToken: true }) })).json()).idToken;
+  assert.equal(post({ action: "updateBina" }).ok, false);
+  // Bina's list refreshed: a new girl, and Kriti's file was replaced by a new copy (old one deleted).
+  driveFiles.find((x) => x.id === "b1").trashed = true;
+  driveFiles.push({ id: "b6", name: "Kriti Shah - new upload.pdf", mimeType: "application/pdf", text: "Height: 5'4\"" },
+    { id: "b7", name: "Mira Joshi - biodata.pdf", mimeType: "application/pdf", text: "Height: 5'3\"\nNative Place: Morbi" });
+  driveFolders.y91.files.push("b6"); driveFolders.y93.files.push("b7");
+  assert.deepEqual(post({ idToken: tok, action: "updateBina" }), { ok: true, started: true });
+  assert.equal(triggers.filter((x) => x.getHandlerFunction() === "importBinaRound").length, 1);
+  run("importBinaRound");
+  const all3 = await all();
+  assert.equal(all3.filter((c) => c.name === "Kriti Shah").length, 1);
+  assert.match(all3.find((c) => c.name === "Kriti Shah").pdfUrl, /\/d\/b6\//, "dead link replaced by the new copy");
+  assert.equal(all3.find((c) => c.name === "Mira Joshi").native, "Morbi");
+  const st = await (await fetch(`${FS}/v1/projects/${P}/databases/(default)/documents/admin/imports`, { headers: { Authorization: "Bearer owner" } })).json();
+  const b = st.fields.bina.mapValue.fields;
+  assert.equal(b.created.integerValue, "1"); assert.equal(b.running.booleanValue, false);
 });
 
 test("reads time and place of birth in the usual layouts", () => {

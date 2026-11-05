@@ -274,5 +274,11 @@ await d.click('[data-act="use-bio"]');
 ok((await d.inputValue('#f-fam input[name="birthPlace"]')) === "Ghatkopar, Mumbai" && (await d.inputValue('#f-fam input[name="birthTime"]')) === "07:41"
   && (await d.inputValue('#f-fam input[name="birthDate"]')) === "1992-04-28", "Use these fills Janmakshar from her biodata");
 await d.screenshot({ path: "shots/15-native-birthplace-1280.png", fullPage: true });
+// Sources › Bina: one tap starts a check of her folder (runs in the background; the card shows progress).
+await o.goto(BASE + "#/sources");
+await o.locator('[data-act="bina-update"]').click();
+await o.getByText("Checking Bina's folder").first().waitFor();
+ok(await seen(o.getByText("Checking now")), "Check Bina's folder starts and the Sources card shows it is running");
+await o.screenshot({ path: "shots/16-bina-check-412.png" });
 await browser.close();
 console.log("ALL OK");
