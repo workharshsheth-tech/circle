@@ -38,6 +38,14 @@ await o.getByText("Ready: 5 profiles").waitFor();
 await o.click('[data-act="go"]');
 await o.locator("details.grp").first().waitFor();
 ok((await o.locator("details.grp[open]").count()) === 0, "groups start collapsed");
+// Install: Chrome fires beforeinstallprompt when Circle can be installed; simulate it.
+await o.evaluate(() => { const e = new Event("beforeinstallprompt"); e.prompt = () => { window.__prompted = true; }; e.userChoice = Promise.resolve({ outcome: "accepted" }); window.dispatchEvent(e); });
+await o.locator('[data-act="install"]').waitFor();
+await o.screenshot({ path: "shots/6-install-card-412.png" });
+await o.click('[data-act="install"]');
+ok(await o.evaluate(() => window.__prompted === true), "Install Circle button opens the phone's install prompt");
+for (const f of ["manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "sw.js"])
+  ok((await fetch(BASE + f)).status === 200, "serves " + f);
 await o.screenshot({ path: "shots/1-owner-list-412.png" });
 await o.locator('details.grp[data-stage="Pass"] summary').click();
 ok(await o.getByText("Height fail · 5′8″").isVisible(), "Kavya (5′8″) shows Height fail");
@@ -113,6 +121,14 @@ await m.screenshot({ path: "shots/2-reviewer-detail-412.png", fullPage: true });
 await m.goto(BASE + "#/harsh");
 await m.getByText("Zalawadi Dashashrimali Sthanakvasi Jain").waitFor();
 ok(true, "reviewer can read Harsh's biodata");
+
+// iPhone: no install prompt in Safari, so the card explains Share > Add to Home Screen.
+const ipc = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
+const iph = await ipc.newPage(); await signIn(iph, MUM);
+await iph.getByText("Add to Home Screen").waitFor();
+ok(true, "iPhone shows Add to Home Screen how-to");
+await iph.click('[data-act="install-hide"]');
+ok(!(await iph.getByText("Add to Home Screen").isVisible()), "how-to can be dismissed");
 
 // 3. Stranger
 const ic = await browser.newContext({ viewport: { width: 412, height: 900 }, userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36 WhatsApp/2.24" });

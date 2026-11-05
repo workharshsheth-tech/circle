@@ -31,7 +31,8 @@ Pausing or removing a person cuts access at once.
 3. Open a profile > **Shared with** > tick the person (or **Everyone**).
 4. They open the link in Chrome and tap **Continue with Google**, picking the same email you added. Done; it stays signed in.
    If they open it inside WhatsApp, the page shows an **Open in Chrome** button first.
-   Tip: in Chrome, ⋮ > **Add to Home screen**, so Circle opens like an app.
+   Then they tap **Install** on the "Install Circle" card (Android), or on iPhone: Safari > Share > **Add to Home Screen**.
+   Circle then opens from its own icon like an app. Nothing to download from a store; updates arrive by themselves.
 
 Someone not on the list who tries to sign in sees "Not on the list yet" and no data.
 

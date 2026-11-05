@@ -1,4 +1,4 @@
-/* Circle · family review. BUILD 5 */
+/* Circle · family review. BUILD 6 */
 :root{
   --blue:#1c3fae; --blue-ink:#14307f; --blue-soft:#eaf0ff; --blue-line:#cdd8fb;
   --sun:#f5a300; --sun-soft:#fff1cc; --sun-ink:#9a5b00;
@@ -177,3 +177,9 @@ dl.facts dd{margin:0;font-size:14px;font-weight:500;overflow-wrap:anywhere}
 /* BUILD 5: Google sign-in */
 .btn.google{background:#fff;color:var(--ink);border:1px solid #dadce0;height:50px;font-size:16px;gap:10px;box-shadow:var(--shadow)}
 .auth .note{margin-bottom:14px}
+/* BUILD 6: install card */
+.install{display:flex;align-items:center;gap:12px;margin:18px 0 -4px;padding:12px 12px 12px 14px;background:#fff;border-radius:var(--r);box-shadow:var(--shadow);border:2px solid var(--sun-soft)}
+.install img{width:44px;height:44px;border-radius:11px;flex:none}
+.install .m{flex:1;min-width:0;display:flex;flex-direction:column;font-size:13px;color:var(--ink-2);line-height:1.35}
+.install .m b{color:var(--blue-ink);font:600 15px/1.3 var(--head)}
+.install .x{flex:none;width:32px;height:32px;border:0;background:none;color:var(--ink-3);font-size:16px;cursor:pointer}

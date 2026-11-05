@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 5
+// Circle · family review for Harsh. BUILD 6
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "5";
+export const BUILD = "6";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -255,6 +255,29 @@ document.addEventListener("click", (e) => {
   if (e.target.closest('[data-act="signout"]')) { stopAll(); signOut(auth); }
 });
 
+// ---------- install on the phone (home-screen app) ----------
+const STANDALONE = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; if (S.route === "#/" || S.route === "") rerenderSoft(); });
+window.addEventListener("appinstalled", () => { installEvt = null; lsSet("circle.install.hide", String(Date.now() + 3e10)); rerenderSoft(); toast("Circle is on your home screen"); });
+if ("serviceWorker" in navigator && !LOCAL) navigator.serviceWorker.register("/sw.js").catch(() => {});
+function installCard() {
+  if (STANDALONE || IN_APP || +(lsGet("circle.install.hide") || 0) > Date.now()) return "";
+  if (installEvt) return `<div class="install"><img src="/icons/icon-192.png" alt=""><div class="m"><b>Install Circle</b><span>Opens like an app from your home screen.</span></div>
+    <button class="btn sm" data-act="install">Install</button><button class="x" data-act="install-hide" aria-label="Not now">✕</button></div>`;
+  if (IOS) return `<div class="install"><img src="/icons/icon-192.png" alt=""><div class="m"><b>Put Circle on your home screen</b>
+    <span>In Safari tap <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M12 3v12M7 8l5-5 5 5M5 13v7h14v-7"/></svg> Share, then <b>Add to Home Screen</b>.</span></div>
+    <button class="x" data-act="install-hide" aria-label="Not now">✕</button></div>`;
+  return "";
+}
+function bindInstall() {
+  $app.querySelector('[data-act="install"]')?.addEventListener("click", async () => {
+    if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; viewList();
+  });
+  $app.querySelector('[data-act="install-hide"]')?.addEventListener("click", () => { lsSet("circle.install.hide", String(Date.now() + 7 * 864e5)); viewList(); });
+}
+
 // ---------- list ----------
 function filtered() {
   const f = S.filters, q = lc(f.q);
@@ -289,6 +312,7 @@ function viewList() {
   const groups = STAGES.map((st) => [st, list.filter((c) => (c.stage || "New") === st).sort((a, b) => a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
   const total = S.owner ? [...S.cands.values()].filter((c) => !c.archived).length : S.cands.size;
   $app.innerHTML = shell(`
+    ${installCard()}
     <div class="ph"><h2>${S.owner ? "Profiles" : "Profiles Harsh shared"}</h2>
       ${S.owner ? `<label class="btn sm" id="up-btn">Upload PDF<input type="file" accept="application/pdf,.pdf" hidden data-act="upload"></label><a class="btn ghost sm" href="#/import">Import</a>` : ""}</div>
     ${isDrive(S.settings.driveFolder) ? `<div class="links"><a href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">All biodata PDFs in Drive ↗</a></div>` : ""}
@@ -309,6 +333,7 @@ function viewList() {
       `<div class="empty">${total ? "Nothing matches these filters." : S.owner ? "No profiles yet. Add one or import a list." : "Harsh hasn't shared any profiles with you yet."}</div>`}
     ${S.owner ? `<a class="btn fab" href="#/new">+ Add profile</a>` : ""}`, "list");
 
+  bindInstall();
   $app.querySelectorAll("details.grp").forEach((d) => d.addEventListener("toggle", () => { d.open ? S.open.add(d.dataset.stage) : S.open.delete(d.dataset.stage); }));
   $app.querySelectorAll("select[data-filter]").forEach((el) => (el.onchange = () => { S.filters[el.dataset.filter] = el.value; viewList(); }));
   const s = $app.querySelector('input[data-filter="q"]');
@@ -694,7 +719,7 @@ function viewPeople() {
   };
   $app.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     const m = S.members.find((x) => x.email === b.dataset.copy);
-    const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} in Chrome and tap "Continue with Google" with ${m.email}.${isDrive(S.settings.driveFolder) ? ` The biodata PDFs are here: ${S.settings.driveFolder}` : ""}`;
+    const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} in Chrome and tap "Continue with Google" with ${m.email}. Then tap "Install" so Circle sits on your home screen.${isDrive(S.settings.driveFolder) ? ` The biodata PDFs are here: ${S.settings.driveFolder}` : ""}`;
     try { await navigator.clipboard.writeText(msg); toast("Invite copied. Send it yourself."); } catch { prompt("Copy this invite:", msg); }
   }));
   $app.querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = () => {
