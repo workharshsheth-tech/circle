@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 3
+// Circle · family review for Harsh. BUILD 4
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "3";
+export const BUILD = "4";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -596,10 +596,10 @@ function viewImport() {
   const parse = () => {
     err.textContent = ""; parsed = null; const t = ta.value.trim(); if (!t) { pre.textContent = ""; return; }
     try {
-      let rows, harsh = null;
-      if (/^[\[{]/.test(t)) { const j = JSON.parse(t); rows = Array.isArray(j) ? j : j.candidates || []; harsh = j.harsh || null; }
+      let rows, harsh = null, settings = null;
+      if (/^[\[{]/.test(t)) { const j = JSON.parse(t); rows = Array.isArray(j) ? j : j.candidates || []; harsh = j.harsh || null; settings = j.settings || null; }
       else rows = parseCSV(t);
-      parsed = { rows: rows.map(normCand).filter((x) => x.c.name), harsh };
+      parsed = { rows: rows.map(normCand).filter((x) => x.c.name), harsh, settings };
       pre.textContent = `Ready: ${parsed.rows.length} profile${parsed.rows.length === 1 ? "" : "s"}${harsh ? " and Harsh's biodata" : ""}. ` +
         parsed.rows.map((x) => x.c.name).join(", ");
     } catch (e) { err.textContent = "Couldn't read that: " + e.message; }
@@ -615,6 +615,7 @@ function viewImport() {
       if (p.contact || p.source || p.notes) b.set(doc(db, "candidates", ref.id, "private", "notes"), p);
     }
     if (parsed.harsh) b.set(doc(db, "reference", "harsh"), parsed.harsh);
+    if (parsed.settings?.driveFolder && isDrive(parsed.settings.driveFolder)) b.set(doc(db, "reference", "settings"), { ...S.settings, driveFolder: parsed.settings.driveFolder });
     try { await b.commit(); toast(`Imported ${parsed.rows.length}`); location.hash = "#/"; } catch (e) { err.textContent = niceErr(e); }
   };
 }
@@ -691,6 +692,7 @@ function viewHarsh() {
     <div class="ph"><h2>Harsh's biodata</h2>${S.owner ? `<a class="btn ghost sm" href="#/harsh/edit">Edit</a>` : ""}</div>
     ${h ? `<section class="card"><div class="hero" style="margin:0 0 14px"><div class="ph-img">${h.photo ? `<img src="${h.photo}" alt="">` : esc(initials(h.name))}</div>
       <div><h1>${esc(h.name)}</h1><span class="tag blue">For reference</span></div></div>
+      ${isDrive(h.pdfUrl) ? `<a class="pdf" href="${esc(h.pdfUrl)}" target="_blank" rel="noopener"><span class="ic">PDF</span><span class="sp">Harsh's biodata PDF</span><span class="go">Open ↗</span></a>` : ""}
       <dl class="facts">${HFIELDS.slice(1).filter(([k]) => h[k]).map(([k, l]) => `<dt>${l}</dt><dd>${esc(k === "dob" ? fmtDob(h[k]) : h[k])}</dd>`).join("")}</dl>
       ${h.about ? `<p class="about">${esc(h.about)}</p>` : ""}</section>
       <p class="hint">Height rule: a partner's height must be at or under 5′6″.</p>`
