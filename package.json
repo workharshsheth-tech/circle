@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "firebase emulators:start --project demo-family-review",
-    "test": "firebase emulators:exec --only firestore,auth --project demo-family-review \"node --test --test-concurrency=1 tests/rules.test.mjs tests/intake.test.mjs\"",
+    "test": "firebase emulators:exec --only firestore,auth --project demo-family-review \"node --test --test-concurrency=1 tests/rules.test.mjs tests/intake.test.mjs tests/scan.test.mjs\"",
     "deploy": "firebase deploy --only hosting,firestore"
   },
   "author": "",

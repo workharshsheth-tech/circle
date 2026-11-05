@@ -9,7 +9,13 @@ export const SECRET = "test-secret-0123456789abcdefghij";
 const props = { PROJECT_ID: P, API_KEY: "demo-key", FOLDER_ID: "folder1", BOT_SECRET: SECRET, OWNER_EMAIL: "work.harshsheth@gmail.com",
   FIRESTORE_BASE: FS, IDTK_BASE: AU + "/identitytoolkit.googleapis.com" };
 export const saved = [];
+// Fake Drive folder for scanFolder(): { id, name, mimeType, text, thumb }
+export const driveFiles = [];
+const fileObj = (f) => ({ getId: () => f.id, getName: () => f.name, getMimeType: () => f.mimeType,
+  getBlob: () => ({ fileId: f.id }), getThumbnail: () => (f.thumb ? { getBytes: () => Buffer.from(f.thumb) } : null) });
 function curl(url, opt = {}) {
+  const ex = url.match(/drive\/v3\/files\/ocr_(.+)\/export/);
+  if (ex) { const f = driveFiles.find((x) => x.id === ex[1]); return { getResponseCode: () => 200, getContentText: () => f?.text || "" }; }
   const args = ["-s", "-L", "-w", "\n%{http_code}", "-X", (opt.method || "get").toUpperCase(), url];
   for (const [k, v] of Object.entries(opt.headers || {})) args.push("-H", `${k}: ${v}`);
   if (opt.payload != null) args.push("-H", `Content-Type: ${opt.contentType || "application/json"}`, "--data-binary", opt.payload);
@@ -20,12 +26,18 @@ function curl(url, opt = {}) {
 }
 function blob(bytes, type, name) { let n = name; return { bytes, type, getName: () => n, setName: (x) => { n = x; } }; }
 const ctx = vm.createContext({
-  PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
   ContentService: { MimeType: { JSON: "json" }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
   UrlFetchApp: { fetch: curl },
   ScriptApp: { getOAuthToken: () => "owner" },
-  Utilities: { base64Decode: (b) => Buffer.from(b, "base64"), newBlob: blob },
-  DriveApp: { getFolderById: (id) => ({ createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
+  Utilities: { base64Decode: (b) => Buffer.from(b, "base64"), base64Encode: (b) => Buffer.from(b).toString("base64"), newBlob: blob },
+  LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+  Drive: { Files: { create: (meta, blob) => ({ id: "ocr_" + blob.fileId }), remove() {} } },
+  console: { log() {}, warn() {} },
+  DriveApp: { getFolderById: (id) => ({ getName: () => "From chat", getFiles: () => { let i = 0; return { hasNext: () => i < driveFiles.length, next: () => fileObj(driveFiles[i++]) }; }, createFile: (b) => { saved.push({ folder: id, name: b.getName() }); const fid = "FILE" + saved.length + "_abcdefghijklmnopqrstuvwxyz"; return { getId: () => fid, getName: () => b.getName() }; } }) },
 });
 vm.runInContext(readFileSync("apps-script/Code.gs", "utf8"), ctx);
+export const props_ = props;
+export const run = (fn) => vm.runInContext(fn + "()", ctx);
+export const parse = (t) => JSON.parse(JSON.stringify(vm.runInContext("parseBiodata_", ctx)(t)));
 export const post = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text);

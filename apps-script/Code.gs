@@ -1,13 +1,16 @@
-// Circle intake. BUILD 3
-// Runs as Harsh (web app, "Execute as: me"). Takes a biodata PDF from the Seema Aunty bot or from
-// Circle's "Upload biodata PDF", saves it in Harsh's Drive folder and adds or updates the profile in Circle.
-// Nobody gets in without either the bot secret or Harsh's own signed-in Circle session.
+// Circle intake. BUILD 7
+// Runs as Harsh. Three ways a biodata reaches Circle:
+//  1. scanFolder(): every 15 minutes it looks in the Drive folder where the Seema Aunty bot saves biodatas
+//     ("From chat"), reads each new PDF / image, and adds or fills in the profile. No change to the bot needed.
+//  2. Circle's "Upload PDF" button (web app, checked against Harsh's own sign-in).
+//  3. Optional: the bot posts directly with BOT_SECRET (see docs/seema-bot.md).
+// First time: run setupCheck(), then installTrigger(), from the Run menu.
 //
 // Script properties (Project settings > Script properties), never in code or chat:
 //   PROJECT_ID     Firebase project id
 //   API_KEY        Firebase web apiKey (public; used only to check Harsh's sign-in)
 //   FOLDER_ID      Drive folder id for the PDFs
-//   BOT_SECRET     long random text; the same text goes into the bot's settings
+//   BOT_SECRET     optional; only if the bot should post directly. At least 24 random characters
 //   OWNER_EMAIL    work.harshsheth@gmail.com
 //   FIRESTORE_BASE, IDTK_BASE (tests only) overrides for the Firestore and sign-in check addresses
 
@@ -73,7 +76,7 @@ function intake_(body, who) {
   // 2. Same name already in Circle? Fill in what's missing and attach the PDF; never overwrite Harsh's edits.
   var existing = findByName_(c.name);
   var heightFit = c.heightIn ? (c.heightIn <= HARSH_HEIGHT_IN ? "pass" : "fail") : "unknown";
-  var source = who === "bot" ? "Seema Aunty bot" : "Uploaded in Circle";
+  var source = { bot: "Seema Aunty bot", folder: "Seema Aunty · From chat folder", harsh: "Uploaded in Circle" }[who] || who;
   if (existing) {
     var patch = {};
     Object.keys(c).forEach(function (k) { if (existing.data[k] == null || existing.data[k] === "") patch[k] = c[k]; });
@@ -101,7 +104,7 @@ function saveToFolder_(blob) {
 }
 function nameFromFile_(n) {
   return String(n).replace(/\.[a-z0-9]+$/i, "").replace(/[_\-]+/g, " ")
-    .replace(/\b(bio ?data|biodata|resume|profile|pdf|final|new|\d{4}|\(\d+\))\b/ig, " ").replace(/\s+/g, " ").trim();
+    .replace(/\b(bio ?data|biodata|resume|profile|pdf|final|new|joint|photo|photos|pic|pics|scan|\d{4}|\(\d+\))\b/ig, " ").replace(/\s+/g, " ").trim();
 }
 function parseHeight_(v) {
   if (v == null || v === "") return null;
@@ -118,7 +121,8 @@ function fsBase_() {
   return (prop_("FIRESTORE_BASE") || "https://firestore.googleapis.com") + "/v1/projects/" + prop_("PROJECT_ID") + "/databases/(default)/documents";
 }
 function fsFetch_(path, opt) {
-  opt.headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
+  // X-Goog-User-Project: count the calls against Circle's own Firebase project, where Firestore is switched on.
+  opt.headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "X-Goog-User-Project": prop_("PROJECT_ID") };
   opt.muteHttpExceptions = true; opt.contentType = "application/json";
   var r = UrlFetchApp.fetch(fsBase_() + path, opt);
   if (r.getResponseCode() >= 300) throw new Error("Firestore " + r.getResponseCode() + ": " + r.getContentText().slice(0, 200));
@@ -165,4 +169,121 @@ function fromFs_(fields) {
     out[k] = "stringValue" in v ? v.stringValue : "integerValue" in v ? +v.integerValue : "doubleValue" in v ? v.doubleValue : "booleanValue" in v ? v.booleanValue : null;
   });
   return out;
+}
+
+
+// ===================== Folder watcher: the Seema Aunty bot's "From chat" folder =====================
+var MAX_PER_RUN = 6; // stay well inside Apps Script's 6-minute limit
+
+function scanFolder() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { skipped: "already running" };
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var owner = normName_(prop_("OWNER_NAME") || "Harsh Sheth");
+    var groups = {}, it = DriveApp.getFolderById(prop_("FOLDER_ID")).getFiles();
+    while (it.hasNext()) {
+      var f = it.next(), mt = f.getMimeType();
+      if (!/^application\/pdf$|^image\//.test(mt)) continue;
+      var name = nameFromFile_(f.getName()), key = normName_(name);
+      if (!key || key === owner) continue;
+      (groups[key] = groups[key] || { name: name, files: [] }).files.push(f);
+    }
+    var done = [], keys = Object.keys(groups);
+    for (var i = 0; i < keys.length && done.length < MAX_PER_RUN; i++) {
+      var g = groups[keys[i]];
+      var fresh = g.files.filter(function (f) { return !props.getProperty("seen:" + f.getId()); });
+      if (!fresh.length) continue;
+      done.push(intakeGroup_(g));
+      g.files.forEach(function (f) { props.setProperty("seen:" + f.getId(), "1"); });
+    }
+    console.log("scanFolder: " + JSON.stringify(done));
+    return { ok: true, processed: done };
+  } finally { lock.releaseLock(); }
+}
+
+// One girl's files: the biodata (PDF first, else an image that isn't just a photo) and a photo if there is one.
+function intakeGroup_(g) {
+  var isPhoto = function (f) { return /photo|pic|img|dp/i.test(f.getName()) && /^image\//.test(f.getMimeType()); };
+  var doc = g.files.filter(function (f) { return f.getMimeType() === "application/pdf"; })[0]
+         || g.files.filter(function (f) { return !isPhoto(f); })[0] || g.files[0];
+  var photo = g.files.filter(isPhoto)[0];
+  var fields = {};
+  try { fields = parseBiodata_(ocrText_(doc)); } catch (e) { console.warn("could not read " + doc.getName() + ": " + e); }
+  fields.name = fields.name && normName_(fields.name) === normName_(g.name) ? fields.name : g.name;
+  var r = intake_({ driveFileId: doc.getId(), fields: fields, source: doc.getName() }, "folder");
+  if (photo && r.ok) {
+    var cur = fsFetch_("/candidates/" + r.id, { method: "get" });
+    var has = cur.fields && cur.fields.photo && cur.fields.photo.stringValue;
+    if (!has) {
+      var thumb = photo.getThumbnail();
+      if (thumb) fsPatch_("candidates/" + r.id, { photo: "data:image/png;base64," + Utilities.base64Encode(thumb.getBytes()) });
+    }
+  }
+  return { name: r.name, id: r.id, created: !!r.created, heightFit: r.heightFit };
+}
+
+// Text of a PDF or image, via Google Drive's own text recognition. The temporary Google Doc is deleted right away.
+function ocrText_(file) {
+  var tmp = Drive.Files.create({ name: "circle-ocr-tmp", mimeType: "application/vnd.google-apps.document" }, file.getBlob(), { ocrLanguage: "en", fields: "id" });
+  try {
+    var r = UrlFetchApp.fetch("https://www.googleapis.com/drive/v3/files/" + tmp.id + "/export?mimeType=text/plain",
+      { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    return r.getContentText();
+  } finally { Drive.Files.remove(tmp.id); }
+}
+
+// Pull the usual biodata lines. Leaves out phones, emails and addresses on purpose.
+var MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function parseBiodata_(text) {
+  var t = String(text || "").replace(/\r/g, "").replace(/[•⚫●▪]/g, "\n");
+  // Some biodatas put several labels on one line: stop a value where the next label starts.
+  var NEXT = /\s(?:address|native|religion|marital|profession|occupation|caste|cast|place|time|height|education|qualification|weight|email|contact)\b(?:\s+(?:status|place|details|no))?\s*[:\-]/i;
+  var line = function (re) {
+    var m = t.match(re); if (!m) return "";
+    var v = m[1].split(NEXT)[0];
+    return v.replace(/\s+/g, " ").replace(/[|,;.\s]+$/, "").trim();
+  };
+  var out = {};
+  var nm = line(/^\s*name\s*[:\-]\s*([^\n]{3,60})/im); if (nm) out.name = titleCase_(nm);
+  var h = line(/height\s*[:\-]?\s*([0-9][^\n]{0,20})/i); if (h) out.height = h;
+  var dob = line(/(?:date of birth|d\.?o\.?b\.?|birth ?date|born on|birth details\s*:\s*date)\s*[:\-]?\s*([^\n|]{6,30})/i);
+  var d = parseDate_(dob); if (d) out.dob = d;
+  out.community = line(/(?:sub caste|caste|cast|religion|community)\s*[:\-]\s*([^\n]{3,60})/i);
+  out.native = line(/native(?: place)?\s*[:\-]\s*([^\n]{2,50})/i);
+  out.education = line(/(?:qualification|education)\s*[:\-]\s*([^\n]{3,120})/i);
+  out.work = line(/(?:occupation|profession|current work|currently working)\s*[:\-]?\s*([^\n]{3,120})/i);
+  out.marital = line(/marital status\s*[:\-]\s*([^\n]{3,60})/i);
+  Object.keys(out).forEach(function (k) {
+    if (k !== "dob" && k !== "height") out[k] = String(out[k]).replace(/\+?\d[\d\s\-]{8,}\d/g, "").replace(/\S+@\S+/g, "").trim(); // no phones/emails
+    if (!out[k]) delete out[k];
+  });
+  return out;
+}
+function parseDate_(s) {
+  if (!s) return "";
+  var m = s.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (m) return m[3] + "-" + pad_(m[2]) + "-" + pad_(m[1]);
+  m = s.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*,?\s+(\d{4})/i);
+  if (m && MONTHS[m[2].toLowerCase()]) return m[3] + "-" + pad_(MONTHS[m[2].toLowerCase()]) + "-" + pad_(m[1]);
+  m = s.match(/([a-z]{3})[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+  if (m && MONTHS[m[1].toLowerCase()]) return m[3] + "-" + pad_(MONTHS[m[1].toLowerCase()]) + "-" + pad_(m[2]);
+  return "";
+}
+function pad_(n) { return ("0" + n).slice(-2); }
+function titleCase_(s) { return s.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }); }
+
+// ===================== One-time setup helpers (Run menu) =====================
+function setupCheck() {
+  var need = ["PROJECT_ID", "API_KEY", "FOLDER_ID", "OWNER_EMAIL"], miss = need.filter(function (k) { return !prop_(k); });
+  if (miss.length) { console.log("Missing script properties: " + miss.join(", ")); return; }
+  console.log("Folder: " + DriveApp.getFolderById(prop_("FOLDER_ID")).getName());
+  var r = fsFetch_(":runQuery", { method: "post", payload: JSON.stringify({ structuredQuery: { from: [{ collectionId: "candidates" }], limit: 50 } }) });
+  console.log("Circle profiles found: " + r.filter(function (x) { return x.document; }).length);
+  console.log("All good. Now run installTrigger.");
+}
+function installTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "scanFolder") ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("scanFolder").timeBased().everyMinutes(15).create();
+  console.log("Circle now checks the folder every 15 minutes.");
 }
