@@ -1,10 +1,49 @@
 {
-  "harsh": { "name": "Harsh Sheth", "dob": "1990-03-08", "height": "5 ft 6 in", "community": "Zalawadi Dashashrimali Sthanakvasi Jain", "native": "Lakhtar" },
-  "candidates": [
-    { "name": "Asha Mehta", "stage": "In review", "height": "5'3\"", "city": "Mumbai", "community": "Jain", "about": "Test profile." },
-    { "name": "Riya Kapadia", "stage": "Shortlist", "height": "5'4\"", "city": "Mumbai", "community": "Jain" },
-    { "name": "Nisha Patel", "stage": "New", "city": "Delhi" },
-    { "name": "Pooja Vora", "stage": "In review", "height": "157 cm", "city": "Mumbai" },
-    { "name": "Kavya Doshi", "stage": "Pass", "height": "5'8\"", "city": "Mumbai", "community": "Jain" }
-  ]
+ "harsh": {
+  "name": "Harsh Sheth",
+  "dob": "1990-03-08",
+  "height": "5 ft 6 in",
+  "community": "Zalawadi Dashashrimali Sthanakvasi Jain",
+  "native": "Lakhtar"
+ },
+ "candidates": [
+  {
+   "name": "Asha Mehta",
+   "stage": "Mothers in touch",
+   "height": "5'3\"",
+   "city": "Mumbai",
+   "community": "Jain",
+   "about": "Test profile.",
+   "source": "Seema Aunty",
+   "dob": "1993-12-23",
+   "marital": "Never married"
+  },
+  {
+   "name": "Riya Kapadia",
+   "stage": "Kundli check",
+   "height": "5'4\"",
+   "city": "Mumbai",
+   "community": "Jain",
+   "source": "Mummy's friend"
+  },
+  {
+   "name": "Nisha Patel",
+   "stage": "New",
+   "city": "Delhi"
+  },
+  {
+   "name": "Pooja Vora",
+   "stage": "Mothers in touch",
+   "height": "157 cm",
+   "city": "Mumbai"
+  },
+  {
+   "name": "Kavya Doshi",
+   "stage": "Pass",
+   "height": "5'8\"",
+   "city": "Mumbai",
+   "community": "Jain",
+   "source": "Seema Aunty"
+  }
+ ]
 }

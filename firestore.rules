@@ -54,6 +54,18 @@ service cloud.firestore {
         allow delete: if isOwner() || (canSee(id) && who == email());
       }
 
+      // Family's part: spoke to her mother, biodatas exchanged, kundli, feedback on her family.
+      match /progress/{doc} {
+        allow read: if canSee(id);
+        allow write: if canSee(id) && doc == 'family'
+          && request.resource.data.keys().hasOnly(['motherContacted', 'contactedOn', 'biodataExchanged', 'kundli', 'familyFeedback', 'updatedBy', 'updatedAt'])
+          && request.resource.data.motherContacted is bool && request.resource.data.biodataExchanged is bool
+          && request.resource.data.kundli in ['', 'Pending', 'Match', 'No match']
+          && request.resource.data.familyFeedback is string && request.resource.data.familyFeedback.size() <= 2000
+          && request.resource.data.contactedOn is string && request.resource.data.contactedOn.size() <= 10
+          && request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 60;
+      }
+
       match /comments/{c} {
         allow read: if canSee(id);
         allow create: if canSee(id)

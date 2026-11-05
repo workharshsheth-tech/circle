@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 6
+// Circle · family review for Harsh. BUILD 8
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "6";
+export const BUILD = "8";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -22,14 +22,20 @@ if (LOCAL) {
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
 }
 
-const STAGES = ["New", "In review", "Shortlist", "Shared", "Talking", "Meeting", "On hold", "Pass"];
+// The family's usual path: Mummy calls her mother, mothers swap biodatas, kundli check, families meet,
+// then it's Harsh and the girl. On hold / Pass are the side doors.
+const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Kundli check", "Families meet", "Harsh meets her", "Going ahead", "On hold", "Pass"];
+const OLD_STAGE = { "In review": "New", "Shortlist": "New", "Shared": "Biodatas exchanged", "Talking": "Mothers in touch", "Meeting": "Families meet" };
+const stageOf = (c) => (STAGES.includes(c.stage) ? c.stage : OLD_STAGE[c.stage] || "New");
+const KUNDLI = ["", "Pending", "Match", "No match"];
+const CALLS = ["Yes", "Not sure", "No"];
 const HARSH_HEIGHT_IN = 66; // 5 ft 6 in. Partner height must be at or under this.
 const $app = document.getElementById("app");
 
 // ---------- state ----------
 const S = {
   user: null, me: null, owner: false,
-  cands: new Map(), members: [], harsh: null, settings: {}, admin: {}, summaries: new Map(),
+  cands: new Map(), members: [], harsh: null, settings: {}, admin: {}, criteria: {}, privAll: null, summaries: new Map(),
   filters: { stage: "", height: "", community: "", city: "", q: "", archived: false },
   open: new Set(), unsubs: [], detailUnsubs: [], route: "",
 };
@@ -174,9 +180,10 @@ async function startData() {
   const q = S.owner ? collection(db, "candidates") : query(collection(db, "candidates"), where("viewers", "array-contains", email));
   let first = true;
   S.unsubs.push(onSnapshot(q, (snap) => {
-    S.cands = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+    S.cands = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }])); S.privAll = null;
     loadSummaries(); if (first) { first = false; route(); } else rerenderSoft();
   }, (e) => toast(niceErr(e))));
+  if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "criteria"), (d) => { S.criteria = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(collection(db, "members"), (snap) => {
     S.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -216,7 +223,9 @@ async function loadSummaries() {
 
 // ---------- shell ----------
 function shell(inner, tab) {
-  const tabs = [["#/", "Profiles", "list"], ...(S.owner ? [["#/people", "Family", "people"]] : []), ["#/harsh", "Harsh's biodata", "harsh"]];
+  const tabs = S.owner
+    ? [["#/", "Profiles", "list"], ["#/people", "Family", "people"], ["#/sources", "Sources", "sources"], ["#/criteria", "My criteria", "criteria"], ["#/harsh", "My biodata", "harsh"]]
+    : [["#/", "Profiles", "list"], ["#/harsh", "Harsh's biodata", "harsh"]];
   return `
   <header class="top">${TORAN}
     <div class="in"><a class="brand" href="#/">${mark()}<span>Circle</span></a><span class="sp"></span>
@@ -247,6 +256,8 @@ function route(soft) {
   else if (S.owner && h === "#/import") viewImport();
   else if (S.owner && h === "#/people") viewPeople();
   else if (S.owner && h === "#/harsh/edit") viewHarshEdit();
+  else if (S.owner && h === "#/sources") viewSources();
+  else if (S.owner && h === "#/criteria") viewCriteria();
   else if (h === "#/harsh") viewHarsh();
   else viewList();
   if (soft) scrollTo(0, y);
@@ -283,7 +294,7 @@ function filtered() {
   const f = S.filters, q = lc(f.q);
   return [...S.cands.values()].filter((c) =>
     (S.owner ? (f.archived ? c.archived : !c.archived) : true) &&
-    (!f.stage || c.stage === f.stage) &&
+    (!f.stage || stageOf(c) === f.stage) &&
     (!f.height || heightFit(c.heightIn) === f.height) &&
     (!f.community || c.community === f.community) &&
     (!f.city || c.city === f.city) &&
@@ -301,7 +312,7 @@ function rowHtml(c) {
   let right;
   if (S.owner) right = s.count ? `<span class="score"><span class="mini-star">★</span> <b>${s.avg.toFixed(1)}</b> · ${s.count}</span>` : `<span class="score">No ratings</span>`;
   else right = s.mine ? `<span class="score">You <span class="mini-star">★</span><b>${s.mine}</b></span>` : `<span class="tag blue">Rate</span>`;
-  const flags = S.owner ? [c.hidden && "Hidden", !c.hidden && !c.archived && !(c.viewers || []).length && "Not shared"].filter(Boolean) : [];
+  const flags = S.owner ? [fitChecks(c).some((x) => x.must && x.ok === false) && "Misses a must", c.hidden && "Hidden", !c.hidden && !c.archived && !(c.viewers || []).length && "Not shared"].filter(Boolean) : [];
   return `<a class="cr" href="#/c/${c.id}">
     <div class="av">${c.photo ? `<img src="${c.photo}" alt="" loading="lazy">` : esc(initials(c.name))}</div>
     <div class="m"><div class="nm">${esc(c.name)}</div><div class="sub">${esc(sub) || "&nbsp;"}</div></div>
@@ -309,7 +320,7 @@ function rowHtml(c) {
 }
 function viewList() {
   const list = filtered(), f = S.filters, any = f.stage || f.height || f.community || f.city || f.q;
-  const groups = STAGES.map((st) => [st, list.filter((c) => (c.stage || "New") === st).sort((a, b) => a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
+  const groups = STAGES.map((st) => [st, list.filter((c) => stageOf(c) === st).sort((a, b) => a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
   const total = S.owner ? [...S.cands.values()].filter((c) => !c.archived).length : S.cands.size;
   $app.innerHTML = shell(`
     ${installCard()}
@@ -354,6 +365,8 @@ function viewDetail(id, soft) {
 function subscribeDetail(id) {
   stopDetail(); Object.assign(D, { id, reviews: null, mine: null, comments: [], editing: null, priv: null, pdfOpen: false });
   const email = lc(S.user.email);
+  D.prog = null;
+  S.detailUnsubs.push(onSnapshot(doc(db, "candidates", id, "progress", "family"), (d) => { D.prog = d.exists() ? d.data() : {}; redrawDetail(); }, () => { D.prog = {}; }));
   S.detailUnsubs.push(onSnapshot(query(collection(db, "candidates", id, "comments"), orderBy("createdAt")), (snap) => {
     D.comments = snap.docs.map((d) => ({ id: d.id, ...d.data() })); redrawDetail();
   }, () => {}));
@@ -393,13 +406,13 @@ function drawDetail(c) {
     <a class="back" href="#/">‹ Profiles</a>
     <div class="hero">
       <div class="ph-img">${c.photo ? `<img src="${c.photo}" alt="" data-act="zoom">` : esc(initials(c.name))}</div>
-      <div><h1>${esc(c.name)}</h1><div class="tags">${heightTag(c.heightIn)}${S.owner ? "" : `<span class="tag blue">${esc(c.stage || "New")}</span>`}
+      <div><h1>${esc(c.name)}</h1><div class="tags">${heightTag(c.heightIn)}${S.owner ? "" : `<span class="tag blue">${esc(stageOf(c))}</span>`}
         ${S.owner && c.hidden ? `<span class="tag mute">Hidden</span>` : ""}${S.owner && c.archived ? `<span class="tag mute">Archived</span>` : ""}</div></div>
     </div>
 
     ${S.owner ? `
     <div class="adminbar">
-      <select class="chip on" data-act="stage" aria-label="Stage">${STAGES.map((s) => `<option ${s === (c.stage || "New") ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <select class="chip on" data-act="stage" aria-label="Stage">${STAGES.map((s) => `<option ${s === stageOf(c) ? "selected" : ""}>${s}</option>`).join("")}</select>
       <a class="btn ghost sm" href="#/edit/${c.id}">Edit</a>
       <button class="btn ghost sm" data-act="hide">${c.hidden ? "Unhide" : "Hide from family"}</button>
       <button class="btn ghost sm" data-act="archive">${c.archived ? "Restore" : "Archive"}</button>
@@ -412,6 +425,8 @@ function drawDetail(c) {
       ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : `<div class="hint">No details yet.</div>`}
       ${c.about ? `<p class="about">${esc(c.about)}</p>` : ""}
     </section>
+    ${familyPartHtml()}
+    ${S.owner ? fitHtml(c) : ""}
 
     <section class="card" id="rate">
       <h3>${S.owner ? "Family rating" : "Your rating"}</h3>
@@ -441,8 +456,10 @@ function drawDetail(c) {
     <section class="card">
       <h3>Only you see this</h3>
       ${D.priv ? `<form id="f-priv">
+        <div class="f"><span class="lbl">My call</span><div class="seg">${CALLS.map((x) => `<label class="${D.priv.myCall === x ? "on" : ""}"><input type="radio" name="myCall" value="${x}" ${D.priv.myCall === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
         <div class="row2"><label class="f"><span>Contact</span><input class="in-t" name="contact" value="${esc(D.priv.contact)}"></label>
-        <label class="f"><span>Came from</span><input class="in-t" name="source" value="${esc(D.priv.source)}"></label></div>
+        <label class="f"><span>Came from</span><input class="in-t" name="source" list="src-list" value="${esc(D.priv.source)}" placeholder="Seema Aunty, Mummy's friend…"></label></div>
+        <datalist id="src-list">${[...new Set(Object.values(S.privAll || {}).map((p) => p.source).filter(Boolean))].map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
         <label class="f"><span>Notes</span><textarea class="in-t" name="notes">${esc(D.priv.notes)}</textarea></label>
         <button class="btn ghost sm" type="submit">Save notes</button></form>` : `<div class="hint">Loading…</div>`}
     </section>` : ""}
@@ -483,6 +500,17 @@ function bindDetail(c) {
     try { await updateDoc(doc(db, "candidates", id, "comments", D.editing), { text: t, editedAt: serverTimestamp() }); D.editing = null; document.activeElement?.blur(); }
     catch (err) { toast(niceErr(err)); }
   });
+  const fam = document.getElementById("f-fam");
+  $app.querySelectorAll(".seg input, .tick input[type=checkbox]").forEach((i) => (i.onchange = () => { i.closest(".seg")?.querySelectorAll("label").forEach((l) => l.classList.toggle("on", l.querySelector("input").checked)); if (i.type === "checkbox") i.closest(".tick")?.classList.toggle("on", i.checked); }));
+  if (fam) {
+    fam.onsubmit = async (e) => {
+      e.preventDefault();
+      const v = { motherContacted: fam.motherContacted.checked, contactedOn: fam.contactedOn.value, biodataExchanged: fam.biodataExchanged.checked,
+        kundli: fam.querySelector('input[name="kundli"]:checked')?.value || "", familyFeedback: fam.familyFeedback.value.trim().slice(0, 2000),
+        updatedBy: myName(), updatedAt: serverTimestamp() };
+      try { await setDoc(doc(db, "candidates", id, "progress", "family"), v); document.activeElement?.blur(); toast("Saved"); } catch (err) { toast(niceErr(err)); }
+    };
+  }
   $app.querySelectorAll("[data-del-cm]").forEach((b) => (b.onclick = async () => {
     if (!confirm("Delete this comment?")) return;
     try { await deleteDoc(doc(db, "candidates", id, "comments", b.dataset.delCm)); } catch (err) { toast(niceErr(err)); }
@@ -507,9 +535,113 @@ function bindDetail(c) {
   const fp = document.getElementById("f-priv");
   if (fp) fp.onsubmit = async (e) => {
     e.preventDefault();
-    D.priv = { contact: fp.contact.value.trim(), source: fp.source.value.trim(), notes: fp.notes.value.trim() };
+    D.priv = { ...D.priv, contact: fp.contact.value.trim(), source: fp.source.value.trim(), notes: fp.notes.value.trim(), myCall: fp.querySelector('input[name="myCall"]:checked')?.value || "" };
+    if (S.privAll) S.privAll[id] = D.priv;
     await setDoc(doc(db, "candidates", id, "private", "notes"), D.priv); document.activeElement?.blur(); toast("Notes saved");
   };
+}
+
+// ---------- family's part (Mummy & Papa): contact her mother, swap biodatas, kundli, feedback ----------
+function familyPartHtml() {
+  const p = D.prog; if (!p) return "";
+  const kund = p.kundli || "";
+  return `<section class="card">
+    <h3>Family's part</h3>
+    <form id="f-fam">
+      <label class="tick ${p.motherContacted ? "on" : ""}"><input type="checkbox" name="motherContacted" ${p.motherContacted ? "checked" : ""}><span>Spoke to her mother</span>
+        <input class="in-t sm" type="date" name="contactedOn" value="${esc(p.contactedOn)}" aria-label="When"></label>
+      <label class="tick ${p.biodataExchanged ? "on" : ""}"><input type="checkbox" name="biodataExchanged" ${p.biodataExchanged ? "checked" : ""}><span>Biodatas exchanged</span></label>
+      <div class="f" style="margin-top:12px"><span class="lbl">Kundli</span><div class="seg">${KUNDLI.slice(1).map((x) => `<label class="${kund === x ? "on" : ""}"><input type="radio" name="kundli" value="${x}" ${kund === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
+      <label class="f"><span>About her family</span><textarea class="in-t" name="familyFeedback" maxlength="2000" placeholder="How the family came across, what you learnt">${esc(p.familyFeedback)}</textarea></label>
+      <div style="display:flex;align-items:center;gap:10px"><button class="btn ghost sm" type="submit">Save</button>
+      ${p.updatedBy ? `<span class="hint">Last by ${esc(p.updatedBy)} · ${fmtTime(p.updatedAt)}</span>` : ""}</div>
+    </form></section>`;
+}
+
+// ---------- Harsh's criteria (only Harsh sees these) ----------
+const CRIT = [
+  ["age", "Age", "e.g. 30–36"], ["community", "Community", "e.g. Jain, Vaishnav"], ["marital", "Marital status", "e.g. Divorced is fine"],
+  ["diet", "Diet", "e.g. Vegetarian"], ["city", "Lives in / ready to move to", "e.g. Mumbai"], ["education", "Education", ""],
+  ["work", "Work after marriage", ""], ["family", "Her family", ""], ["nature", "Nature and interests", ""],
+];
+const IMP = ["Must", "Nice", "Doesn't matter"];
+function ageRange(s) { const m = String(s || "").match(/(\d{2})\D+(\d{2})/); return m ? [+m[1], +m[2]] : null; }
+function fitChecks(c) {
+  const k = S.criteria || {}, out = [], imp = (x) => (k.imp || {})[x] || "Nice";
+  const fit = heightFit(c.heightIn);
+  out.push({ label: "Height at or under 5′6″", ok: fit === "pass" ? true : fit === "fail" ? false : null, must: true });
+  const add = (key, label, test) => { if (!k[key] || imp(key) === "Doesn't matter") return; out.push({ label, ok: test(), must: imp(key) === "Must" }); };
+  add("age", `Age ${k.age}`, () => { const r = ageRange(k.age), a = +ageOf(c); return r && a ? a >= r[0] && a <= r[1] : null; });
+  const words = (s) => String(s || "").toLowerCase().split(/[,/]| or /).map((w) => w.trim()).filter(Boolean);
+  add("community", `Community: ${k.community}`, () => (c.community ? words(k.community).some((w) => lc(c.community).includes(w)) : null));
+  add("city", `Lives in: ${k.city}`, () => (c.city ? words(k.city).some((w) => lc(c.city).includes(w)) : null));
+  add("diet", `Diet: ${k.diet}`, () => (c.diet ? words(k.diet).some((w) => lc(c.diet).includes(w)) : null));
+  add("marital", `Marital status: ${k.marital}`, () => {
+    if (!c.marital) return null;
+    const was = /divorc|separat|widow|married for/i.test(c.marital);
+    return /never|first marriage|unmarried/i.test(k.marital) ? !was : null;
+  });
+  return out;
+}
+function fitHtml(c) {
+  const f = fitChecks(c);
+  const icon = (ok) => (ok === true ? `<span class="fit ok">✓</span>` : ok === false ? `<span class="fit bad">✕</span>` : `<span class="fit na">?</span>`);
+  return `<section class="card"><h3>Against my criteria <span class="tag mute" style="margin-left:6px">Only you</span></h3>
+    <ul class="fits">${f.map((x) => `<li>${icon(x.ok)}<span>${esc(x.label)}</span>${x.must ? `<span class="tag ${x.ok === false ? "bad" : "mute"}">Must</span>` : ""}</li>`).join("")}</ul>
+    ${f.length < 3 ? `<div class="hint" style="margin-top:8px"><a href="#/criteria">Set your criteria</a> to see more here.</div>` : ""}</section>`;
+}
+function viewCriteria() {
+  const k = S.criteria || {}, imp = k.imp || {};
+  $app.innerHTML = shell(`
+    <div class="ph"><h2>My criteria</h2><span class="tag mute">Only you see this</span></div>
+    <p class="hint" style="margin-top:-6px">Write what you want, and mark how much it matters. Profiles then show where each girl fits.</p>
+    <form id="f-crit">
+      <section class="card">
+        <div class="crit"><div class="m"><b>Height</b><span>At or under 5′6″</span></div><span class="tag bad">Must</span></div>
+        ${CRIT.map(([key, label, ph]) => `<div class="crit">
+          <label class="f" style="margin:0;flex:1"><span>${label}</span><input class="in-t" name="${key}" value="${esc(k[key])}" placeholder="${esc(ph)}"></label>
+          <select class="chip" name="imp-${key}" aria-label="How much it matters">${IMP.map((x) => `<option ${x === (imp[key] || "Nice") ? "selected" : ""}>${x}</option>`).join("")}</select></div>`).join("")}
+      </section>
+      <section class="card">
+        <label class="f"><span>Deal-breakers</span><textarea class="in-t" name="dealBreakers" placeholder="Things that end it, whatever else is good">${esc(k.dealBreakers)}</textarea></label>
+        <label class="f"><span>What I learnt from meetings so far</span><textarea class="in-t" name="learnt" placeholder="What felt right, what didn't">${esc(k.learnt)}</textarea></label>
+        <label class="f" style="margin:0"><span>Thinking out loud</span><textarea class="in-t" name="thinking" placeholder="Anything still unclear">${esc(k.thinking)}</textarea></label>
+      </section>
+      <button class="btn wide" type="submit">Save</button>
+    </form>`, "criteria");
+  const f = document.getElementById("f-crit");
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const d = { imp: {} };
+    CRIT.forEach(([key]) => { d[key] = f[key].value.trim(); d.imp[key] = f["imp-" + key].value; });
+    ["dealBreakers", "learnt", "thinking"].forEach((x) => (d[x] = f[x].value.trim()));
+    d.updatedAt = serverTimestamp();
+    await setDoc(doc(db, "admin", "criteria"), d); document.activeElement?.blur(); toast("Saved");
+  };
+}
+
+// ---------- Sources: where every biodata came from (only Harsh) ----------
+async function loadPrivAll() {
+  const ids = [...S.cands.keys()], out = {};
+  await Promise.all(ids.map(async (id) => { const d = await getDoc(doc(db, "candidates", id, "private", "notes")); out[id] = d.exists() ? d.data() : {}; }));
+  S.privAll = out;
+}
+function viewSources() {
+  if (!S.privAll) { $app.innerHTML = shell(`<div class="spin">Loading…</div>`, "sources"); loadPrivAll().then(() => { if (S.route === "#/sources") viewSources(); }); return; }
+  const by = {};
+  [...S.cands.values()].filter((c) => !c.archived).forEach((c) => { const s = (S.privAll[c.id] || {}).source || "Not recorded"; (by[s] = by[s] || []).push(c); });
+  const keys = Object.keys(by).sort((a, b) => (a === "Not recorded") - (b === "Not recorded") || by[b].length - by[a].length);
+  const past = (c) => STAGES.indexOf(stageOf(c)) >= 1 && STAGES.indexOf(stageOf(c)) <= 6;
+  $app.innerHTML = shell(`
+    <div class="ph"><h2>Sources</h2><span class="tag mute">Only you see this</span></div>
+    <p class="hint" style="margin-top:-6px">Where each biodata came from. Set it on a profile under "Only you see this › Came from".</p>
+    ${keys.length ? keys.map((k) => `<details class="grp" data-src="${esc(k)}" ${S.open.has("src:" + k) ? "open" : ""}>
+      <summary><span class="dot"></span>${esc(k)}<span class="n">${by[k].length}</span><span class="sp"></span>
+        <span class="hint">${by[k].filter(past).length} moved ahead</span><span class="car"></span></summary>
+      ${by[k].sort((a, b) => a.name.localeCompare(b.name)).map((c) => `<a class="cr" href="#/c/${c.id}"><div class="av">${c.photo ? `<img src="${c.photo}" alt="">` : esc(initials(c.name))}</div>
+        <div class="m"><div class="nm">${esc(c.name)}</div><div class="sub">${esc(stageOf(c))}</div></div><div class="r">${heightTag(c.heightIn)}</div></a>`).join("")}
+    </details>`).join("") : `<div class="empty">No profiles yet.</div>`}`, "sources");
+  $app.querySelectorAll("details.grp").forEach((d) => d.addEventListener("toggle", () => { const k = "src:" + d.dataset.src; d.open ? S.open.add(k) : S.open.delete(k); }));
 }
 
 // ---------- upload a biodata PDF (goes to Harsh's Drive and becomes a profile, via the intake script) ----------
@@ -564,7 +696,7 @@ function viewEdit(id) {
       <div class="hero" style="margin-top:0"><div class="ph-img" id="pv">${photo ? `<img src="${photo}" alt="">` : "+"}</div>
         <div><label class="btn ghost sm">Choose photo<input type="file" accept="image/*" name="photo" hidden></label>
         ${photo ? ` <button class="btn plain sm" type="button" data-act="nophoto">Remove</button>` : ""}<div class="hint" style="margin-top:6px">Kept small, only in this app.</div></div></div>
-      <label class="f"><span>Stage</span><select class="in-t" name="stage">${STAGES.map((s) => `<option ${s === (c.stage || "New") ? "selected" : ""}>${s}</option>`).join("")}</select></label>
+      <label class="f"><span>Stage</span><select class="in-t" name="stage">${STAGES.map((s) => `<option ${s === stageOf(c) ? "selected" : ""}>${s}</option>`).join("")}</select></label>
       ${FIELDS.slice(0, 3).map(fieldHtml(c)).join("")}
       <label class="f"><span>Height</span>${heightSelects(c.heightIn)}</label>
       ${FIELDS.slice(3).map(fieldHtml(c)).join("")}
@@ -599,7 +731,7 @@ function viewEdit(id) {
   $app.querySelector('[data-act="delete"]')?.addEventListener("click", async () => {
     if (!confirm(`Delete ${c.name} with all ratings and comments? This can't be undone.`)) return;
     const b = writeBatch(db);
-    for (const sub of ["reviews", "comments", "private"]) (await getDocs(collection(db, "candidates", id, sub))).forEach((d) => b.delete(d.ref));
+    for (const sub of ["reviews", "comments", "private", "progress"]) (await getDocs(collection(db, "candidates", id, sub))).forEach((d) => b.delete(d.ref));
     b.delete(doc(db, "candidates", id)); await b.commit(); location.hash = "#/"; toast("Deleted");
   });
 }

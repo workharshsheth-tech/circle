@@ -73,6 +73,16 @@ test("intake settings are owner-only", async () => {
   await assertFails(setDoc(doc(as(MUM), "admin", "settings"), { intakeUrl: "https://evil.example" }));
   await assertSucceeds(setDoc(doc(as(OWNER), "admin", "settings"), { intakeUrl: "https://script.google.com/macros/s/x/exec" }));
 });
+test("family's part: shared family can fill it, nobody else, only known fields", async () => {
+  const ok = { motherContacted: true, contactedOn: "2026-11-05", biodataExchanged: false, kundli: "Pending", familyFeedback: "Warm family", updatedBy: "Mummy", updatedAt: 1 };
+  await assertSucceeds(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), ok));
+  await assertSucceeds(getDoc(doc(as(MUM), "candidates", "a", "progress", "family")));
+  await assertFails(setDoc(doc(as(MUM), "candidates", "b", "progress", "family"), ok));
+  await assertFails(setDoc(doc(as(OUT), "candidates", "a", "progress", "family"), ok));
+  await assertFails(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), { ...ok, kundli: "Maybe" }));
+  await assertFails(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), { ...ok, stage: "Going ahead" }));
+  await assertFails(getDoc(doc(as(MUM), "admin", "criteria")));
+});
 test("owner can do everything", async () => {
   const db = as(OWNER);
   await assertSucceeds(getDocs(collection(db, "candidates")));

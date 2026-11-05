@@ -14,7 +14,7 @@
 //   OWNER_EMAIL    work.harshsheth@gmail.com
 //   FIRESTORE_BASE, IDTK_BASE (tests only) overrides for the Firestore and sign-in check addresses
 
-var STAGES = ["New", "In review", "Shortlist", "Shared", "Talking", "Meeting", "On hold", "Pass"];
+var STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Kundli check", "Families meet", "Harsh meets her", "Going ahead", "On hold", "Pass"];
 var TEXT_FIELDS = ["name", "dob", "community", "native", "city", "education", "work", "family", "marital", "diet", "about"];
 var HARSH_HEIGHT_IN = 66;
 

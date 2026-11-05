@@ -53,26 +53,40 @@ Someone not on the list who tries to sign in sees "Not on the list yet" and no d
   Keep the folder on "Restricted", not "Anyone with the link".
 - Import also takes a `pdf` column with the Drive link.
 
-## Upload a PDF, or send it to the Seema Aunty bot
+## How a rishta moves in Circle
 
-- In Circle: **Profiles > Upload PDF**. The PDF goes into the Drive folder and becomes a profile in **New**
-  (or is attached to the profile with the same name). Then fill in the details.
-- From the bot: see `docs/seema-bot.md` for what the bot sends and the text to give Grok.
-- Both go through one small Google Apps Script (`apps-script/`), running as Harsh: it saves into his Drive and writes
-  to Circle. It accepts only the bot's secret or Harsh's own Circle sign-in.
+Stages follow the family's usual path: **New → Mothers in touch → Biodatas exchanged → Kundli check → Families meet →
+Harsh meets her → Going ahead**, plus **On hold** and **Pass**.
 
-### Set up the intake (one time, about 10 minutes)
+- **Family's part** (on every profile, filled by Mummy, Papa or anyone it's shared with): spoke to her mother (and when),
+  biodatas exchanged, kundli (Pending / Match / No match), and what they felt about her family.
+- **Harsh's part** (only Harsh sees): **My call** (Yes / Not sure / No) and private notes on each profile.
+- **My criteria** tab (only Harsh): what he wants and how much it matters (Must / Nice / Doesn't matter), deal-breakers,
+  what he learnt from meetings, thinking out loud. Each profile shows "Against my criteria"; the list flags "Misses a must".
+- **Sources** tab (only Harsh): every biodata grouped by where it came from, and how many from each moved ahead.
+  Set it on a profile under "Only you see this › Came from". The folder watcher fills it in by itself.
+
+## New biodatas arrive by themselves
+
+The Seema Aunty bot already saves biodatas in Drive › **Seema Aunty · Biodatas › From chat**. A small Google Apps Script
+(`apps-script/`, running as Harsh) checks that folder every 15 minutes. For each new girl it reads the biodata with
+Google's own text reading, adds her in **New** (shared with no one), fills height, date of birth, community, native,
+education, work and marital status, attaches the PDF and photo, and sets Sources. If she's already in Circle, it only fills
+empty fields. Phones, emails and addresses are left out. Harsh's own biodata is skipped.
+
+The same script powers **Profiles › Upload PDF**. Optionally the bot can post to it directly (`docs/seema-bot.md`).
+
+### Set up the script (one time, about 10 minutes)
 
 1. https://script.google.com > **New project**, name it "Circle intake" (signed in as work.harshsheth@gmail.com).
-2. Paste `apps-script/Code.gs` into Code.gs. **Project settings** > tick "Show appsscript.json" and paste
-   `apps-script/appsscript.json`.
-3. **Project settings > Script properties**, add: `PROJECT_ID` (Firebase project id), `API_KEY` (from `public/config.js`),
-   `FOLDER_ID` (the part after `/folders/` in the Drive folder link), `OWNER_EMAIL` (work.harshsheth@gmail.com),
-   `BOT_SECRET` (at least 24 random characters; keep it out of chats).
-4. **Deploy > New deployment > Web app**, Execute as **Me**, Who has access **Anyone**. Allow the permissions.
-   Copy the web app URL.
-5. In Circle: **Family > Setup > Intake link**, paste the URL, **Save**.
-6. Put the same URL and `BOT_SECRET` into the Seema Aunty bot's settings yourself.
+2. **Project settings** (gear) > tick **Show "appsscript.json"**. In the editor, replace `appsscript.json` and `Code.gs`
+   with the files in `apps-script/` from GitHub.
+3. **Project settings > Script properties > Add**: `PROJECT_ID` = `circle-88f2b`, `API_KEY` = the apiKey in `public/config.js`,
+   `FOLDER_ID` = `1KW3nb2zWCn0uI7F8Bkt2_0W9-KRyWzzu` (From chat), `OWNER_EMAIL` = `work.harshsheth@gmail.com`.
+4. In the editor, pick **setupCheck** in the function list > **Run** > allow the permissions (Advanced > Go to Circle intake).
+   The log should say "All good". Then pick **installTrigger** > **Run**.
+5. Optional, for **Upload PDF**: **Deploy > New deployment > Web app**, Execute as **Me**, access **Anyone** > Deploy.
+   Paste the web app URL in Circle under **Family > Setup > Intake link**.
 
 ## Set up (one time, about 15 minutes)
 
@@ -94,7 +108,7 @@ No environment variables are needed. If you change the owner email, change it in
 
 - `npm run dev` starts local Auth, Firestore and Hosting emulators. Open http://localhost:5000.
   Sign-in links appear at http://127.0.0.1:9099/emulator/v1/projects/demo-family-review/oobCodes.
-- `npm test` runs the security rules tests (8) and the intake tests (5: wrong secret, bot PDF with fields, same-name merge, PDF only, only Harsh's sign-in).
+- `npm test` runs the security rules tests (9), intake tests (5) and folder-watcher tests (4).
 - `node tests/e2e.mjs` (with `npm run dev` running) drives a real browser: owner signs in, imports, invites,
   shares; reviewer signs in, rates, comments; a stranger is turned away. Screenshots go to `shots/`.
 
