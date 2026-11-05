@@ -82,6 +82,15 @@ test("family's part: shared family can fill it, nobody else, only known fields",
   await assertFails(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), { ...ok, kundli: "Maybe" }));
   await assertFails(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), { ...ok, stage: "Going ahead" }));
   await assertFails(getDoc(doc(as(MUM), "admin", "criteria")));
+  const jm = { ...ok, birthName: "A", birthDate: "1993-12-23", birthTime: "05:48", birthPlace: "Mumbai", sentToHarshaben: true, sentOn: "2026-11-06", harshabenNotes: "Good match" };
+  await assertSucceeds(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), jm));
+});
+test("family can move the stage along their part only, never Harsh's fields", async () => {
+  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "With Harshaben", harshaben: "Match" }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Going ahead" }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { stage: "Pass" }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "With Harshaben", viewers: [MUM, OUT] }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "b"), { familyStage: "Mothers in touch" }));
 });
 test("owner can do everything", async () => {
   const db = as(OWNER);

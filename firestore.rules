@@ -37,6 +37,11 @@ service cloud.firestore {
     match /candidates/{id} {
       allow read: if isOwner() || (isMember() && email() in resource.data.viewers);
       allow write: if isOwner();
+      // Family can move the stage along their own part of the path and record Harshaben's word. Nothing else.
+      allow update: if isMember() && email() in resource.data.viewers
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['familyStage', 'harshaben'])
+        && request.resource.data.familyStage in ['New', 'Mothers in touch', 'Biodatas exchanged', 'Janmakshar received', 'With Harshaben']
+        && request.resource.data.harshaben in ['', 'Pending', 'Match', 'No match'];
 
       // Admin-only notes (contact numbers, source, private remarks). Reviewers never read this.
       match /private/{doc} {
@@ -58,11 +63,16 @@ service cloud.firestore {
       match /progress/{doc} {
         allow read: if canSee(id);
         allow write: if canSee(id) && doc == 'family'
-          && request.resource.data.keys().hasOnly(['motherContacted', 'contactedOn', 'biodataExchanged', 'kundli', 'familyFeedback', 'updatedBy', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['motherContacted', 'contactedOn', 'biodataExchanged', 'birthName', 'birthDate', 'birthTime', 'birthPlace',
+               'sentToHarshaben', 'sentOn', 'kundli', 'harshabenNotes', 'familyFeedback', 'updatedBy', 'updatedAt'])
           && request.resource.data.motherContacted is bool && request.resource.data.biodataExchanged is bool
           && request.resource.data.kundli in ['', 'Pending', 'Match', 'No match']
           && request.resource.data.familyFeedback is string && request.resource.data.familyFeedback.size() <= 2000
           && request.resource.data.contactedOn is string && request.resource.data.contactedOn.size() <= 10
+          && request.resource.data.get('sentOn', '') is string && request.resource.data.get('sentOn', '').size() <= 10
+          && request.resource.data.get('birthName', '').size() <= 60 && request.resource.data.get('birthPlace', '').size() <= 60
+          && request.resource.data.get('birthDate', '').size() <= 10 && request.resource.data.get('birthTime', '').size() <= 5
+          && request.resource.data.get('harshabenNotes', '').size() <= 2000
           && request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 60;
       }
 

@@ -1,4 +1,4 @@
-/* Circle · family review. BUILD 8 */
+/* Circle · family review. BUILD 9 */
 :root{
   --blue:#1c3fae; --blue-ink:#14307f; --blue-soft:#eaf0ff; --blue-line:#cdd8fb;
   --sun:#f5a300; --sun-soft:#fff1cc; --sun-ink:#9a5b00;
@@ -205,3 +205,5 @@ dl.facts dd{margin:0;font-size:14px;font-weight:500;overflow-wrap:anywhere}
 .crit .m{flex:1;display:flex;flex-direction:column;font-size:14px}
 .crit .m span{color:var(--ink-2)}
 .crit select.chip{height:44px}
+/* BUILD 9: Janmakshar block */
+.sub-h{font:600 14px/1.3 var(--head);color:var(--blue-ink);margin:16px 0 8px}
