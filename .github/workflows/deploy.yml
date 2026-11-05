@@ -1,0 +1,45 @@
+# Circle: every push to main is tested, then put live on https://circle-88f2b.web.app
+# Sign-in to Google is keyless (Workload Identity): no secrets are stored in GitHub.
+name: Deploy Circle
+
+# Manual only until the one-time Google setup (scripts/setup-auto-deploy.sh) is done; then "push" is switched on.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      - name: Security rules, intake and folder-check tests
+        run: npm test
+
+      - name: Sign in to Google (keyless)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/1035925084798/locations/global/workloadIdentityPools/github/providers/github
+          service_account: circle-deploy@circle-88f2b.iam.gserviceaccount.com
+
+      - name: Put it live
+        run: npx firebase deploy --only hosting,firestore:rules --project circle-88f2b --non-interactive
