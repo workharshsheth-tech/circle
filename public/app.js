@@ -1,4 +1,4 @@
-// Circle · family review for Harsh. BUILD 12
+// Circle · family review for Harsh. BUILD 14
 // Plain ES module, no build step. Security lives in firestore.rules; this file only draws screens.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./config.js";
 
-export const BUILD = "12";
+export const BUILD = "14";
 const LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
 const app = initializeApp(LOCAL ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-family-review" } : firebaseConfig);
 const auth = getAuth(app);
@@ -230,12 +230,13 @@ async function startData() {
   S.unsubs.push(onSnapshot(q, (snap) => {
     S.cands = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }])); S.privAll = null;
     loadSummaries(); if (first) { first = false; route(); if (S.owner) moveSources(); } else rerenderSoft();
+    autoShare();
   }, (e) => toast(niceErr(e))));
   if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "criteria"), (d) => { S.criteria = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
-  if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; }, () => {}));
+  if (S.owner) S.unsubs.push(onSnapshot(doc(db, "admin", "settings"), (d) => { S.admin = d.exists() ? d.data() : {}; S.adminLoaded = true; autoShare(); }, () => {}));
   if (S.owner) S.unsubs.push(onSnapshot(collection(db, "members"), (snap) => {
     S.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    rerenderSoft();
+    rerenderSoft(); autoShare();
   }));
   S.unsubs.push(onSnapshot(doc(db, "reference", "settings"), (d) => { S.settings = d.exists() ? d.data() : {}; rerenderSoft(); }, () => {}));
   S.unsubs.push(onSnapshot(doc(db, "reference", "harsh"), (d) => { S.harsh = d.exists() ? d.data() : null; if (S.route.startsWith("#/harsh")) rerenderSoft(); }, () => {}));
@@ -521,7 +522,7 @@ function drawDetail(c) {
     ${S.owner ? `
     <section class="card">
       <h3>Shared with</h3>
-      ${members.length ? `<div class="share">${members.map((m) => `<label class="${shared.has(m.email) ? "on" : ""}"><input type="checkbox" data-share="${esc(m.email)}" ${shared.has(m.email) ? "checked" : ""}>${esc(m.name || m.email)}</label>`).join("")}</div>
+      ${AUTO() ? `<div class="hint">${c.hidden || c.archived ? `${c.hidden ? "Hidden" : "Archived"}: only you can see her.` : `All family (${members.length}) can see her. Tap <b>Hide from family</b> to keep her private.`} <a href="#/people">Change</a></div>` : members.length ? `<div class="share">${members.map((m) => `<label class="${shared.has(m.email) ? "on" : ""}"><input type="checkbox" data-share="${esc(m.email)}" ${shared.has(m.email) ? "checked" : ""}>${esc(m.name || m.email)}</label>`).join("")}</div>
       <div style="margin-top:10px;display:flex;gap:8px"><button class="btn ghost sm" data-act="share-all">Everyone</button><button class="btn plain sm" data-act="share-none">No one</button></div>
       ${c.hidden || c.archived ? `<div class="hint" style="margin-top:8px">${c.hidden ? "Hidden" : "Archived"}, so no one can see it right now.</div>` : ""}`
       : `<div class="hint">No family added yet. <a href="#/people">Add people</a>.</div>`}
@@ -999,6 +1000,7 @@ function viewPeople() {
   const url = location.origin + "/";
   const people = S.members.filter((m) => m.role !== "owner");
   const count = (e) => [...S.cands.values()].filter((c) => (c.viewers || []).includes(e)).length;
+  const open = [...S.cands.values()].filter((c) => !c.archived && !c.hidden).length;
   $app.innerHTML = shell(`
     <div class="ph"><h2>Family</h2></div>
     <p class="hint" style="margin-top:-6px">Add someone here, then send them the invite yourself. They sign in with this exact email.</p>
@@ -1015,14 +1017,21 @@ function viewPeople() {
       <div class="hint" style="margin:-6px 0 14px">Only you see this. It lets "Upload PDF" and the Seema Aunty bot add profiles.</div>
       <button class="btn ghost sm" type="submit">Save</button>${isDrive(S.settings.driveFolder) ? ` <a class="btn plain sm" href="${esc(S.settings.driveFolder)}" target="_blank" rel="noopener">Open folder ↗</a>` : ""}
     </form></details>
+    <section class="card">
+      <label class="tick ${AUTO() ? "on" : ""}" style="margin:0"><input type="checkbox" data-act="auto-share" ${AUTO() ? "checked" : ""}>
+        <span>Everyone here sees every profile<br><span class="hint" style="font-weight:400">except the ones you hide (Profile › Hide from family). New profiles too.</span></span></label>
+      ${AUTO() ? "" : `<div style="display:flex;align-items:center;gap:10px;margin-top:12px"><span class="hint" style="flex:1">You choose per profile now. To give everyone everything in one go:</span>
+        <button class="btn sm" data-act="share-every">Share all ${open}</button></div>`}
+    </section>
     <section class="card people">
       ${people.length ? people.map((m) => `<div class="p">
         <div class="av">${esc(initials(m.name))}</div>
         <div class="m"><div style="font-weight:600">${esc(m.name)} ${m.active ? "" : `<span class="tag mute">Paused</span>`}</div>
-          <div class="e">${esc(m.email)} · sees ${count(m.email)}</div></div>
+          <div class="e">${esc(m.email)} · sees ${count(m.email)} of ${open}</div></div>
+        <div class="acts">${!AUTO() && m.active && count(m.email) < open ? `<button class="btn sm" data-share-one="${esc(m.email)}">Share all</button>` : ""}
         <button class="btn ghost sm" data-copy="${esc(m.email)}">Copy invite</button>
         <button class="btn plain sm" data-toggle="${esc(m.email)}">${m.active ? "Pause" : "Resume"}</button>
-        <button class="btn plain sm" data-remove="${esc(m.email)}" aria-label="Remove">✕</button>
+        <button class="btn plain sm" data-remove="${esc(m.email)}" aria-label="Remove">✕</button></div>
       </div>`).join("") : `<div class="hint">No one yet.</div>`}
     </section>`, "people");
   const f = document.getElementById("f-add");
@@ -1045,6 +1054,21 @@ function viewPeople() {
     const msg = `Hi ${m.name.split(" ")[0]}, I've added you to Circle so you can look at a few profiles with me and share what you think. Open ${url} in Chrome and tap "Continue with Google" with ${m.email}. Then tap "Install" so Circle sits on your home screen.${isDrive(S.settings.driveFolder) ? ` The biodata PDFs are here: ${S.settings.driveFolder}` : ""}`;
     try { await navigator.clipboard.writeText(msg); toast("Invite copied. Send it yourself."); } catch { prompt("Copy this invite:", msg); }
   }));
+  $app.querySelectorAll("[data-share-one]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true; const n = await shareAll([b.dataset.shareOne]); toast(`Shared ${n} profile${n === 1 ? "" : "s"}`);
+  }));
+  $app.querySelector('[data-act="share-every"]')?.addEventListener("click", async (e) => {
+    e.currentTarget.disabled = true;
+    const n = await shareAll(S.members.filter((m) => m.active && m.role !== "owner").map((m) => m.email));
+    toast(n ? `Shared ${n} profile${n === 1 ? "" : "s"} with everyone` : "Everyone already sees everything");
+  });
+  $app.querySelector('[data-act="auto-share"]').onchange = async (e) => {
+    await setDoc(doc(db, "admin", "settings"), { ...S.admin, autoShare: e.target.checked });
+    S.admin.autoShare = e.target.checked;
+    if (e.target.checked) await autoShare();
+    toast(e.target.checked ? "Everyone sees every profile you haven't hidden" : "You now choose who sees each profile");
+    viewPeople();
+  };
   $app.querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = () => {
     const m = S.members.find((x) => x.email === b.dataset.toggle); updateDoc(doc(db, "members", m.email), { active: !m.active });
   }));
@@ -1055,6 +1079,32 @@ function viewPeople() {
     S.cands.forEach((c) => { if ((c.sharedWith || []).includes(email)) { const sw = c.sharedWith.filter((x) => x !== email); batch.update(doc(db, "candidates", c.id), { sharedWith: sw, viewers: viewersOf({ ...c, sharedWith: sw }) }); } });
     await batch.commit(); toast("Removed");
   }));
+}
+
+// ---------- sharing in bulk ----------
+// Add these emails to every open profile (not hidden, not archived). Returns how many profiles changed.
+async function shareAll(emails) {
+  const list = [...S.cands.values()].filter((c) => !c.archived && !c.hidden);
+  let n = 0, batch = writeBatch(db), inBatch = 0;
+  for (const c of list) {
+    const set = new Set((c.sharedWith || []).map(lc)), before = set.size;
+    emails.forEach((e) => set.add(lc(e)));
+    if (set.size === before) continue;
+    const sw = [...set]; batch.update(doc(db, "candidates", c.id), { sharedWith: sw, viewers: viewersOf({ ...c, sharedWith: sw }) });
+    n++; if (++inBatch === 400) { await batch.commit(); batch = writeBatch(db); inBatch = 0; }
+  }
+  if (inBatch) await batch.commit();
+  return n;
+}
+// With "share new profiles automatically" on, any new profile (from the folder check, an upload or an import)
+// is shared with all active family the next time Harsh opens Circle.
+let autoSharing = false;
+// Default: the whole family sees every profile except the ones Harsh hides. Harsh can switch to choosing per profile.
+const AUTO = () => S.admin.autoShare !== false;
+async function autoShare() {
+  if (!S.owner || !S.adminLoaded || !AUTO() || autoSharing) return;
+  autoSharing = true;
+  try { await shareAll(S.members.filter((m) => m.active && m.role !== "owner").map((m) => m.email)); } finally { autoSharing = false; }
 }
 
 // ---------- Harsh's biodata ----------

@@ -76,9 +76,7 @@ ok(await seen(o.getByText("Height not known").first()), "Upload PDF of a new gir
 await o.goto(BASE + "#/");
 await o.locator('details.grp[data-stage="Mothers in touch"] summary').click();
 await o.getByText("Asha Mehta").click();
-await o.click('[data-act="share-all"]');
-await o.locator('.share label.on').waitFor();
-ok(true, "owner shares Asha with family");
+ok(await seen(o.getByText("All family (1) can see her")), "every profile is shared with all family by default");
 await o.click('a:has-text("Edit")');
 await o.fill('input[name="pdfUrl"]', "https://example.com/x.pdf");
 await o.click('button:has-text("Save")');
@@ -106,6 +104,13 @@ await o.fill("#f-cm textarea", "Good family, met them at Lakhtar samaj event.");
 await o.click('#f-cm button[type="submit"]');
 await o.getByText("Good family, met them").waitFor();
 ok(true, "owner comments");
+// Harsh hides one profile: only that one stays private.
+await o.goto(BASE + "#/");
+await o.locator('details.grp[data-stage="Pass"]').evaluate((x) => (x.open = true));
+await o.getByText("Kavya Doshi").click();
+await o.click('[data-act="hide"]');
+await o.getByText("Hidden from family").first().waitFor();
+ok(true, "Harsh hides Kavya from family");
 
 // 2. Reviewer
 const mc = await ctx(412), m = await mc.newPage();
@@ -121,8 +126,8 @@ await pop.getByText("Sign in with Google.com").click();
 ok(true, "Mummy signs in with Continue with Google");
 await m.getByText("Profiles Harsh shared").waitFor();
 await m.locator("details.grp").first().waitFor();
-await m.locator("details.grp summary").first().click();
-ok((await m.locator(".cr").count()) === 1, "reviewer sees only the 1 shared profile");
+await m.locator("details.grp").evaluateAll((ds) => ds.forEach((x) => (x.open = true)));
+ok((await m.locator(".cr").count()) >= 5 && !(await m.getByText("Kavya Doshi").count()), "Mummy sees every profile except the hidden one");
 ok(await seen(m.getByText("All biodata PDFs in Drive")), "reviewer sees the Drive folder link");
 await m.getByText("Asha Mehta").click();
 await m.locator("a.pdf").waitFor(); ok(true, "reviewer sees the Biodata PDF button");
@@ -231,5 +236,34 @@ await d.locator('[data-lang="Gujarati"]').check();
 ok((await d.locator(".cr").count()) >= 1, "Language multi-select filters (Gujarati)");
 await d.screenshot({ path: "shots/10-main-view-1280.png" });
 
+// A sister added later sees everything at once (no per-profile sharing needed).
+await d.goto(BASE + "#/people");
+await d.fill('#f-add input[name="name"]', "Didi");
+await d.fill('#f-add input[name="email"]', "didi@example.com");
+await d.click('#f-add button[type="submit"]');
+await d.getByText("Didi added").waitFor();
+await d.screenshot({ path: "shots/13-family-1280.png", fullPage: true });
+const dc2 = await ctx(412), di = await dc2.newPage();
+await signIn(di, "didi@example.com");
+await di.locator("details.grp").first().waitFor();
+await di.locator("details.grp").evaluateAll((ds) => ds.forEach((x) => (x.open = true)));
+ok((await di.locator(".cr").count()) >= 5 && !(await di.getByText("Kavya Doshi").count()), "a sister added later sees every profile except hidden ones");
+await di.screenshot({ path: "shots/14-family-phone-412.png" });
+// Harsh can switch to choosing per profile; then "Share all" per person brings everything back.
+await d.locator('[data-act="auto-share"]').uncheck();
+await d.getByText("You now choose who sees each profile").waitFor();
+await d.goto(BASE + "#/new");
+await d.fill('input[name="name"]', "Zara Manual");
+await d.click('button:has-text("Add profile")');
+await d.getByRole("heading", { name: "Zara Manual" }).waitFor();
+await di.reload(); await di.locator("details.grp").first().waitFor();
+await di.locator("details.grp").evaluateAll((ds) => ds.forEach((x) => (x.open = true)));
+ok(!(await di.getByText("Zara Manual").count()), "with sharing set to per-profile, a new profile stays private");
+await d.goto(BASE + "#/people");
+await d.click('[data-share-one="didi@example.com"]');
+await d.getByText(/Shared \d+ profile/).waitFor();
+await di.reload(); await di.locator("details.grp").first().waitFor();
+await di.locator("details.grp").evaluateAll((ds) => ds.forEach((x) => (x.open = true)));
+ok(await seen(di.getByText("Zara Manual")), "Share all gives her every open profile");
 await browser.close();
 console.log("ALL OK");
