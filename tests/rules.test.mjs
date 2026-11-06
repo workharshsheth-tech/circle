@@ -93,8 +93,8 @@ test("family's part: shared family can fill it, nobody else, only known fields",
 test("family can move the stage along their part only, never Harsh's fields", async () => {
   await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", harshaben: "", sentOn: "2026-11-05" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Going ahead" }));
-  // Harshaben's "No match" parks her under Failed by Harshaben; a re-check brings her back to Waiting with the round count.
-  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Failed by Harshaben", harshaben: "No match", sentOn: "2026-11-05", hbRound: 1 }));
+  // Harshaben's "No match" parks her under Harshaben: no match; a re-check brings her back to Waiting with the round count.
+  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Harshaben: no match", harshaben: "No match", sentOn: "2026-11-05", hbRound: 1 }));
   await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", harshaben: "Pending", sentOn: "2026-11-12", hbRound: 2 }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Pass" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", hbRound: "two" }));

@@ -38,12 +38,12 @@ if (LOCAL) {
 
 // The family's usual path: Mummy calls her mother, mothers swap biodatas, the girl's Janmakshar (birth name, date,
 // time, place) comes in, it goes to Harshaben for matching, families meet, then it's Harsh and the girl.
-// On hold / Pass are the side doors. "Failed by Harshaben" is a third one: her kundli didn't match, but she is parked,
+// On hold / Pass are the side doors. "Harshaben: no match" is a third one: her kundli didn't match, but she is parked,
 // not let go. The Janmakshar can be checked and sent again (a re-check), which puts her back in Waiting for Harshaben.
 // Pass stays for Harsh's own call (she won't meet, we let it go).
-const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "Waiting for Harshaben", "Harshaben matched", "Families meet", "Harsh meets her", "Going ahead", "Failed by Harshaben", "On hold", "Pass"];
-const OLD_STAGE = { "In review": "New", "Shortlist": "New", "Shared": "Biodatas exchanged", "Talking": "Mothers in touch", "Meeting": "Families meet", "Kundli check": "Waiting for Harshaben", "With Harshaben": "Waiting for Harshaben" };
-const HB_FAIL = "Failed by Harshaben";
+const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "Waiting for Harshaben", "Harshaben matched", "Families meet", "Harsh meets her", "Going ahead", "Harshaben: no match", "On hold", "Pass"];
+const OLD_STAGE = { "Failed by Harshaben": "Harshaben: no match", "In review": "New", "Shortlist": "New", "Shared": "Biodatas exchanged", "Talking": "Mothers in touch", "Meeting": "Families meet", "Kundli check": "Waiting for Harshaben", "With Harshaben": "Waiting for Harshaben" };
+const HB_FAIL = "Harshaben: no match";
 const SIDE = [HB_FAIL, "On hold", "Pass"];
 const validStage = (x) => (STAGES.includes(x) ? x : OLD_STAGE[x] || "New");
 // Harsh sets the stage; the family's ticks can only move it forward along the family's part of the path.
@@ -399,12 +399,13 @@ function rowHtml(c) {
   else right = s.mine ? `<span class="score">You <span class="mini-star">★</span><b>${s.mine}</b></span>` : `<span class="tag blue">Rate</span>`;
   const waitDays = stageOf(c) === "Waiting for Harshaben" && c.sentOn ? Math.max(0, Math.floor((Date.now() - new Date(c.sentOn)) / 864e5)) : null;
   const round = c.hbRound > 1 ? ` · round ${c.hbRound}` : "";
-  const hb = waitDays != null ? `<span class="tag blue">${c.hbRound > 1 ? "Re-check · " : ""}Waiting ${waitDays === 0 ? "since today" : waitDays === 1 ? "1 day" : waitDays + " days"}</span>` : c.harshaben === "Match" ? `<span class="tag ok">Harshaben: match${round}</span>` : c.harshaben === "No match" ? `<span class="tag bad">Harshaben: no match${round}</span>` : "";
+  const hb = waitDays != null ? `<span class="tag blue">${c.hbRound > 1 ? "Re-check · " : ""}Waiting ${waitDays === 0 ? "since today" : waitDays === 1 ? "1 day" : waitDays + " days"}</span>` : c.harshaben === "Match" ? `<span class="tag ok">Harshaben: match${round}</span>` : c.harshaben === "No match" ? (stageOf(c) === HB_FAIL ? (round ? `<span class="tag bad">Round ${c.hbRound}</span>` : "") : `<span class="tag bad">Harshaben: no match${round}</span>`) : "";
+  const why = stageOf(c) === "Pass" && c.passReason ? `<span class="tag mute">${esc(c.passReason)}</span>` : "";
   const flags = S.owner ? [fitChecks(c).some((x) => x.must && x.ok === false) && "Misses a must", c.hidden && "Hidden", !c.hidden && !c.archived && !(c.viewers || []).length && "Not shared"].filter(Boolean) : [];
   return `<a class="cr" href="#/c/${c.id}">
     <div class="av">${c.photo ? `<img src="${c.photo}" alt="" loading="lazy">` : esc(initials(c.name))}</div>
     <div class="m"><div class="nm">${esc(c.name)}</div><div class="sub">${esc(sub) || "&nbsp;"}</div></div>
-    <div class="r"><div>${hb}${flags.map((x) => `<span class="tag mute">${x}</span>`).join(" ")} ${right}</div>${heightMini(c.heightIn)}</div></a>`;
+    <div class="r"><div>${hb}${why}${flags.map((x) => `<span class="tag mute">${x}</span>`).join(" ")} ${right}</div>${heightMini(c.heightIn)}</div></a>`;
 }
 function viewList() {
   const list = filtered(), f = S.filters, any = f.stage || f.source || f.hb || f.community || f.langs.length || f.city || f.height || f.q;
@@ -516,7 +517,8 @@ function drawDetail(c) {
       <a class="btn ghost sm" href="#/edit/${c.id}">Edit</a>
       <button class="btn ghost sm" data-act="hide">${c.hidden ? "Unhide" : "Hide from family"}</button>
       <button class="btn ghost sm" data-act="archive">${c.archived ? "Restore" : "Archive"}</button>
-    </div>` : ""}
+    </div>
+    ${stageOf(c) === "Pass" ? `<div class="hint passed">Passed${c.passReason ? `: <b>${esc(c.passReason)}</b>` : ""}${c.passNote ? ` · ${esc(c.passNote)}` : ""} <button class="btn plain sm" data-act="pass-why">${c.passReason ? "Change" : "Add why"}</button></div>` : ""}` : ""}
 
     ${isDrive(c.pdfUrl) ? `<a class="pdf" href="${esc(c.pdfUrl)}" target="_blank" rel="noopener" data-act="pdf"><span class="ic">PDF</span><span class="sp">Biodata PDF</span><span class="go">${D.pdfOpen ? "Close" : "View"}</span></a>
       ${D.pdfOpen && driveId(c.pdfUrl) ? `<iframe class="pdf-frame" src="https://drive.google.com/file/d/${driveId(c.pdfUrl)}/preview" title="Biodata PDF"></iframe>` : ""}` : ""}
@@ -671,7 +673,9 @@ function bindDetail(c) {
     const lb = document.createElement("div"); lb.className = "lightbox"; lb.innerHTML = `<img src="${c.photo}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb);
   });
   if (!S.owner) return;
-  $app.querySelector('[data-act="stage"]').onchange = (e) => saveCand(id, { stage: e.target.value }).then(() => toast(`Stage: ${e.target.value}`));
+  const setStage = (st) => saveCand(id, { stage: st }).then(() => toast(`Stage: ${st}`));
+  $app.querySelector('[data-act="stage"]').onchange = (e) => (e.target.value === "Pass" ? askPassReason(c, e.target) : setStage(e.target.value));
+  $app.querySelector('[data-act="pass-why"]')?.addEventListener("click", () => askPassReason(c));
   $app.querySelector('[data-act="hide"]').onclick = () => saveCand(id, { hidden: !c.hidden }).then(() => toast(c.hidden ? "Family can see it again" : "Hidden from family"));
   $app.querySelector('[data-act="archive"]').onclick = () => saveCand(id, { archived: !c.archived }).then(() => toast(c.archived ? "Restored" : "Archived"));
   $app.querySelectorAll("[data-share]").forEach((cb) => (cb.onchange = () => {
@@ -686,6 +690,24 @@ function bindDetail(c) {
     D.priv = { ...D.priv, contact: fp.contact.value.trim(), notes: fp.notes.value.trim(), myCall: fp.querySelector('input[name="myCall"]:checked')?.value || "" };
     if (S.privAll) S.privAll[id] = D.priv;
     await setDoc(doc(db, "candidates", id, "private", "notes"), D.priv); document.activeElement?.blur(); toast("Notes saved");
+  };
+}
+
+// Pass is Harsh's own call. Record why, so Pass (she declined, we let it go) never gets mixed up with Harshaben's no-match.
+const PASS_WHY = ["She declined", "We declined", "No reply", "Other"];
+function askPassReason(c, sel) {
+  const box = document.createElement("div"); box.className = "sheet";
+  box.innerHTML = `<div class="sheet-in"><div class="ph" style="margin:0 0 10px"><h2>Why pass?</h2></div>
+    <div class="seg" style="margin-bottom:12px">${PASS_WHY.map((x) => `<label class="${c.passReason === x ? "on" : ""}"><input type="radio" name="why" value="${x}" ${c.passReason === x ? "checked" : ""}>${x}</label>`).join("")}</div>
+    <label class="f"><span>Anything to remember</span><textarea class="in-t" name="note" maxlength="300" placeholder="e.g. her side wants someone in Ahmedabad">${esc(c.passNote)}</textarea></label>
+    <div style="display:flex;gap:8px"><button class="btn" data-ok>Save</button><button class="btn plain" data-x>Cancel</button></div></div>`;
+  document.body.appendChild(box);
+  box.querySelectorAll(".seg input").forEach((i) => (i.onchange = () => box.querySelectorAll(".seg label").forEach((l) => l.classList.toggle("on", l.querySelector("input").checked))));
+  box.querySelector("[data-x]").onclick = () => { box.remove(); if (sel) sel.value = stageOf(c); };
+  box.querySelector("[data-ok]").onclick = async () => {
+    const passReason = box.querySelector('input[name="why"]:checked')?.value || "", passNote = box.querySelector('[name="note"]').value.trim().slice(0, 300);
+    box.remove();
+    try { await saveCand(c.id, { stage: "Pass", passReason, passNote }); toast(passReason ? `Pass · ${passReason}` : "Stage: Pass"); } catch (e) { toast(niceErr(e)); }
   };
 }
 
@@ -724,7 +746,7 @@ function familyPartHtml() {
       ${tick("sentToHarshaben", "4. Sent to Harshaben", `<input class="in-t sm" type="date" name="sentOn" value="${esc(p.sentOn)}" aria-label="When">`)}
       <div class="f" style="margin-top:12px"><span class="lbl">5. Harshaben's feedback${p.round > 1 ? ` <span class="tag blue">Round ${p.round}</span>` : ""}</span><div class="seg">${KUNDLI.slice(1).map((x) => `<label class="${kund === x ? "on" : ""}"><input type="radio" name="kundli" value="${x}" ${kund === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
       <label class="f"><textarea class="in-t" name="harshabenNotes" maxlength="2000" placeholder="What Harshaben said">${esc(p.harshabenNotes)}</textarea></label>
-      ${kund === "No match" ? `<div class="recheck"><div><b>Harshaben said no match${p.round > 1 ? ` (round ${p.round})` : ""}.</b> She is parked under <b>Failed by Harshaben</b>, not let go.
+      ${kund === "No match" ? `<div class="recheck"><div><b>Harshaben said no match${p.round > 1 ? ` (round ${p.round})` : ""}.</b> She is parked under <b>Harshaben: no match</b>, not let go.
         Check the birth name, date, time and place above (a wrong birth time is the usual culprit), fix anything, then send again. If it is final, Harsh moves her to Pass.</div>
         <button class="btn ghost sm" type="button" data-act="recheck">${WA_ICON}<span>Send again for a re-check</span></button></div>` : ""}
       ${roundsHtml(p.rounds)}
