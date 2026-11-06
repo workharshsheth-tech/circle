@@ -165,6 +165,21 @@ ok(true, "Mummy fills in Family's part: mother, biodatas, Janmakshar, Harshaben'
 await m.screenshot({ path: "shots/9-family-part-412.png", fullPage: true });
 ok(!(await m.getByText("Against my criteria").isVisible()) && !(await m.getByText("Only you see this").isVisible()), "family never sees Harsh's criteria or private notes");
 await m.screenshot({ path: "shots/2-reviewer-detail-412.png", fullPage: true });
+// Harshaben says no match for Riya: she is parked under "Harshaben: no match", not Pass, with a re-check button.
+await m.goto(BASE + "#/");
+await m.locator('details.grp[data-stage="Waiting for Harshaben"]').evaluate((x) => (x.open = true));
+await m.getByText("Riya Kapadia").click();
+await m.locator('#f-fam .seg label', { hasText: /^No match$/ }).click();
+await m.fill('#f-fam textarea[name="harshabenNotes"]', "Nadi dosh. Birth time may be off.");
+await m.click('#f-fam button[type="submit"]');
+await m.getByText("Saved").first().waitFor();
+ok(await seen(m.locator(".hero .tag", { hasText: "Harshaben: no match" })), "No match parks Riya under Harshaben: no match (not Pass)");
+ok(await seen(m.locator('[data-act="recheck"]')), "a Send again for a re-check button appears");
+await m.screenshot({ path: "shots/17-hb-failed-412.png", fullPage: true });
+await m.goto(BASE + "#/");
+await m.locator('details.grp[data-stage="Harshaben: no match"]').evaluate((x) => (x.open = true));
+ok(await seen(m.locator('details.grp[data-stage="Harshaben: no match"] .cr', { hasText: "Riya Kapadia" })), "list shows a Harshaben: no match group with Riya in it");
+await m.screenshot({ path: "shots/18-hb-failed-list-412.png" });
 await m.goto(BASE + "#/harsh");
 await m.getByText("Zalawadi Dashashrimali Sthanakvasi Jain").waitFor();
 ok(true, "reviewer can read Harsh's biodata");
@@ -192,7 +207,30 @@ const dc = await ctx(1280), d = await dc.newPage();
 await signIn(d, OWNER);
 await d.locator("details.grp").first().waitFor();
 await d.locator('details.grp[data-stage="Harshaben matched"] summary').click();
+await d.locator('details.grp[data-stage="Harshaben: no match"] summary').click();
+ok(await seen(d.locator('details.grp[data-stage="Harshaben: no match"] .cr', { hasText: "Riya Kapadia" })) && await d.locator('details.grp[data-stage="Harshaben: no match"] .step.side.bad').isVisible(), "Harsh's list: Harshaben: no match group with a red dot");
 await d.screenshot({ path: "shots/3-owner-list-1280.png" });
+// Re-check: Harsh corrects the birth time and sends the Janmakshar again. Round 1's verdict stays on record.
+await d.getByText("Riya Kapadia").click();
+await d.locator('[data-act="recheck"]').waitFor();
+await d.click('[data-act="recheck"]');
+await d.getByText("Fill birth date, time and place first").waitFor();
+await d.fill('#f-fam input[name="birthPlace"]', "Rajkot");
+await d.fill('#f-fam input[name="birthDate"]', "1994-02-11");
+await d.fill('#f-fam input[name="birthTime"]', "06:20");
+await d.evaluate(() => { window.open = (u) => { window.__wa = u; }; });
+await d.click('[data-act="recheck"]'); await d.locator(".wa-preview").waitFor();
+ok((await d.locator(".wa-preview").textContent()).includes("re-check, round 2"), "re-check message says round 2");
+await d.screenshot({ path: "shots/19-recheck-preview-1280.png" });
+await d.click("[data-go]");
+await d.getByText("Saved").first().waitFor();
+ok(await seen(d.locator(".rounds .tag.bad", { hasText: "Round 1: No match" })), "round 1's No match is kept on record");
+ok(await seen(d.locator("#f-fam .tag", { hasText: "Round 2" })) && (await d.locator('select[data-act="stage"]').inputValue()) === "Waiting for Harshaben", "Riya is back in Waiting for Harshaben as round 2");
+await d.screenshot({ path: "shots/20-recheck-round2-1280.png", fullPage: true });
+await d.goto(BASE + "#/");
+await d.locator('details.grp[data-stage="Waiting for Harshaben"]').evaluate((x) => (x.open = true));
+ok(await seen(d.locator(".cr", { hasText: "Riya Kapadia" }).locator(".tag.blue", { hasText: "Re-check · Waiting" })), "list shows Re-check · Waiting for Riya");
+await d.screenshot({ path: "shots/21-recheck-list-1280.png" });
 await d.getByText("Asha Mehta").click();
 await d.getByText("Ask about her work hours").waitFor();
 ok(await seen(d.getByText("Mummy").first()), "owner sees reviewer rating and comment");
@@ -265,6 +303,24 @@ await d.getByText(/Shared \d+ profile/).waitFor();
 await di.reload(); await di.locator("details.grp").first().waitFor();
 await di.fill('input[data-filter="q"]', "Zara"); // a search opens the matching groups
 ok(await seen(di.locator(".cr", { hasText: "Zara Manual" })), "Share all gives her every open profile");
+// Pass asks why, so Harsh's own call is never confused with Harshaben's no-match.
+await d.goto(BASE + "#/");
+if (await d.locator('[data-act="clear"]').count()) await d.click('[data-act="clear"]'); // the Gujarati filter from earlier would hide Zara
+await d.fill('input[data-filter="q"]', "Zara");
+await d.getByText("Zara Manual").click();
+await d.selectOption('select[data-act="stage"]', "Pass");
+await d.getByText("Why pass?").waitFor();
+await d.locator(".sheet .seg label", { hasText: "She declined" }).click();
+await d.fill('.sheet textarea[name="note"]', "Her side wants someone in Ahmedabad.");
+await d.screenshot({ path: "shots/22-pass-why-1280.png" });
+await d.click(".sheet [data-ok]");
+await d.getByText("Pass · She declined").waitFor();
+ok(await seen(d.locator(".passed", { hasText: "She declined" })), "Pass records why; the profile shows it");
+await d.goto(BASE + "#/");
+await d.fill('input[data-filter="q"]', "");
+await d.locator('details.grp[data-stage="Pass"]').evaluate((x) => (x.open = true));
+ok(await seen(d.locator(".cr", { hasText: "Zara Manual" }).locator(".tag.mute", { hasText: "She declined" })), "list shows the pass reason");
+await d.screenshot({ path: "shots/23-pass-list-1280.png" });
 // Native place and place of birth lead the biodata; Janmakshar can be filled from it in one tap.
 await d.goto(BASE + "#/");
 await d.locator('details.grp[data-stage="Mothers in touch"]').evaluate((x) => (x.open = true));

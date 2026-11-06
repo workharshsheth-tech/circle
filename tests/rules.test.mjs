@@ -84,10 +84,20 @@ test("family's part: shared family can fill it, nobody else, only known fields",
   await assertFails(getDoc(doc(as(MUM), "admin", "criteria")));
   const jm = { ...ok, birthName: "A", birthDate: "1993-12-23", birthTime: "05:48", birthPlace: "Mumbai", sentToHarshaben: true, sentOn: "2026-11-06", harshabenNotes: "Good match" };
   await assertSucceeds(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), jm));
+  // A re-check: round 2, with round 1's "No match" kept on record. Rounds are capped and must be a list.
+  const rc = { ...jm, kundli: "Pending", harshabenNotes: "", round: 2, rounds: [{ round: 1, sentOn: "2026-11-06", result: "No match", notes: "Nadi dosh" }] };
+  await assertSucceeds(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), rc));
+  await assertFails(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), { ...rc, round: 0 }));
+  await assertFails(setDoc(doc(as(MUM), "candidates", "a", "progress", "family"), { ...rc, rounds: "round 1 no match" }));
 });
 test("family can move the stage along their part only, never Harsh's fields", async () => {
   await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", harshaben: "", sentOn: "2026-11-05" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Going ahead" }));
+  // Harshaben's "No match" parks her under Harshaben: no match; a re-check brings her back to Waiting with the round count.
+  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Harshaben: no match", harshaben: "No match", sentOn: "2026-11-05", hbRound: 1 }));
+  await assertSucceeds(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", harshaben: "Pending", sentOn: "2026-11-12", hbRound: 2 }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Pass" }));
+  await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Waiting for Harshaben", hbRound: "two" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { stage: "Pass" }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "a"), { familyStage: "Harshaben matched", viewers: [MUM, OUT] }));
   await assertFails(updateDoc(doc(as(MUM), "candidates", "b"), { familyStage: "Mothers in touch" }));
