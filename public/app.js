@@ -38,20 +38,26 @@ if (LOCAL) {
 
 // The family's usual path: Mummy calls her mother, mothers swap biodatas, the girl's Janmakshar (birth name, date,
 // time, place) comes in, it goes to Harshaben for matching, families meet, then it's Harsh and the girl.
-// On hold / Pass are the side doors.
-const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "Waiting for Harshaben", "Harshaben matched", "Families meet", "Harsh meets her", "Going ahead", "On hold", "Pass"];
+// On hold / Pass are the side doors. "Failed by Harshaben" is a third one: her kundli didn't match, but she is parked,
+// not let go. The Janmakshar can be checked and sent again (a re-check), which puts her back in Waiting for Harshaben.
+// Pass stays for Harsh's own call (she won't meet, we let it go).
+const STAGES = ["New", "Mothers in touch", "Biodatas exchanged", "Janmakshar received", "Waiting for Harshaben", "Harshaben matched", "Families meet", "Harsh meets her", "Going ahead", "Failed by Harshaben", "On hold", "Pass"];
 const OLD_STAGE = { "In review": "New", "Shortlist": "New", "Shared": "Biodatas exchanged", "Talking": "Mothers in touch", "Meeting": "Families meet", "Kundli check": "Waiting for Harshaben", "With Harshaben": "Waiting for Harshaben" };
-const SIDE = ["On hold", "Pass"];
+const HB_FAIL = "Failed by Harshaben";
+const SIDE = [HB_FAIL, "On hold", "Pass"];
 const validStage = (x) => (STAGES.includes(x) ? x : OLD_STAGE[x] || "New");
 // Harsh sets the stage; the family's ticks can only move it forward along the family's part of the path.
 const stageOf = (c) => {
   const base = validStage(c.stage);
   if (SIDE.includes(base)) return base;
   const fam = STAGES.includes(c.familyStage) ? c.familyStage : "New";
+  // Harshaben's "no match" parks her, unless Harsh has himself already taken her past that point.
+  if (fam === HB_FAIL) return STAGES.indexOf(base) > STAGES.indexOf("Waiting for Harshaben") ? base : fam;
   return STAGES.indexOf(fam) > STAGES.indexOf(base) ? fam : base;
 };
 function impliedStage(p) {
   if (p.kundli === "Match") return "Harshaben matched";
+  if (p.kundli === "No match") return HB_FAIL;
   if (p.sentToHarshaben || p.kundli) return "Waiting for Harshaben";
   if (p.birthDate || p.birthTime || p.birthPlace || p.birthName) return "Janmakshar received";
   if (p.biodataExchanged) return "Biodatas exchanged";
@@ -392,7 +398,8 @@ function rowHtml(c) {
   if (S.owner) right = s.count ? `<span class="score"><span class="mini-star">★</span> <b>${s.avg.toFixed(1)}</b> · ${s.count}</span>` : `<span class="score">No ratings</span>`;
   else right = s.mine ? `<span class="score">You <span class="mini-star">★</span><b>${s.mine}</b></span>` : `<span class="tag blue">Rate</span>`;
   const waitDays = stageOf(c) === "Waiting for Harshaben" && c.sentOn ? Math.max(0, Math.floor((Date.now() - new Date(c.sentOn)) / 864e5)) : null;
-  const hb = waitDays != null ? `<span class="tag blue">Waiting ${waitDays === 0 ? "since today" : waitDays === 1 ? "1 day" : waitDays + " days"}</span>` : c.harshaben === "Match" ? `<span class="tag ok">Harshaben: match</span>` : c.harshaben === "No match" ? `<span class="tag bad">Harshaben: no match</span>` : "";
+  const round = c.hbRound > 1 ? ` · round ${c.hbRound}` : "";
+  const hb = waitDays != null ? `<span class="tag blue">${c.hbRound > 1 ? "Re-check · " : ""}Waiting ${waitDays === 0 ? "since today" : waitDays === 1 ? "1 day" : waitDays + " days"}</span>` : c.harshaben === "Match" ? `<span class="tag ok">Harshaben: match${round}</span>` : c.harshaben === "No match" ? `<span class="tag bad">Harshaben: no match${round}</span>` : "";
   const flags = S.owner ? [fitChecks(c).some((x) => x.must && x.ok === false) && "Misses a must", c.hidden && "Hidden", !c.hidden && !c.archived && !(c.viewers || []).length && "Not shared"].filter(Boolean) : [];
   return `<a class="cr" href="#/c/${c.id}">
     <div class="av">${c.photo ? `<img src="${c.photo}" alt="" loading="lazy">` : esc(initials(c.name))}</div>
@@ -423,7 +430,7 @@ function viewList() {
     </div>
     ${groups.length ? groups.map(([st, l]) => `
       <details class="grp" data-stage="${esc(st)}" ${S.open.has(st) || any ? "open" : ""}>
-        <summary>${SIDE.includes(st) ? `<span class="step side"></span>` : `<span class="step">${STAGES.indexOf(st) + 1}</span>`}${esc(st)}<span class="n">${l.length}</span><span class="sp"></span><span class="car"></span></summary>
+        <summary>${SIDE.includes(st) ? `<span class="step side ${st === HB_FAIL ? "bad" : ""}"></span>` : `<span class="step">${STAGES.indexOf(st) + 1}</span>`}${esc(st)}<span class="n">${l.length}</span><span class="sp"></span><span class="car"></span></summary>
         ${l.map(rowHtml).join("")}
       </details>`).join("") :
       `<div class="empty">${total ? "Nothing matches these filters." : S.owner ? "No profiles yet. Add one or import a list." : "Harsh hasn't shared any profiles with you yet."}</div>`}
@@ -499,7 +506,7 @@ function drawDetail(c) {
     <a class="back" href="#/">‹ Profiles</a>
     <div class="hero">
       <div class="ph-img">${c.photo ? `<img src="${c.photo}" alt="" data-act="zoom">` : esc(initials(c.name))}</div>
-      <div><h1>${esc(c.name)}</h1><div class="tags">${heightTag(c.heightIn)}${S.owner ? "" : `<span class="tag blue">${esc(stageOf(c))}</span>`}
+      <div><h1>${esc(c.name)}</h1><div class="tags">${heightTag(c.heightIn)}${S.owner ? "" : `<span class="tag ${stageOf(c) === HB_FAIL ? "bad" : "blue"}">${esc(stageOf(c))}</span>`}
         ${S.owner && c.hidden ? `<span class="tag mute">Hidden</span>` : ""}${S.owner && c.archived ? `<span class="tag mute">Archived</span>` : ""}</div></div>
     </div>
 
@@ -606,25 +613,35 @@ function bindDetail(c) {
       if (c.birthPlace) fam.birthPlace.value = c.birthPlace;
       e.currentTarget.closest(".suggest").remove(); toast("Filled from her biodata. Check, then Save.");
     });
-    fam.querySelector('[data-act="wa"]').onclick = () => {
+    // Rounds of matching: round 1 is the first send. A re-check (after "No match") files the earlier verdict under
+    // `rounds`, sets the feedback back to Pending and sends the Janmakshar again as round N+1.
+    let hb = { round: D.prog.round || 1, rounds: Array.isArray(D.prog.rounds) ? D.prog.rounds : [] };
+    const sendToKundli = (recheck) => {
       const v = { birthName: fam.birthName.value.trim(), birthDate: fam.birthDate.value, birthTime: fam.birthTime.value, birthPlace: fam.birthPlace.value.trim() };
       if (!v.birthDate || !v.birthTime || !v.birthPlace) { toast("Fill birth date, time and place first."); return; }
-      const text = kundliText(c, v);
+      const round = recheck ? hb.round + 1 : hb.round, text = kundliText(c, v, round);
       const box = document.createElement("div"); box.className = "sheet";
-      box.innerHTML = `<div class="sheet-in"><div class="ph" style="margin:0 0 10px"><h2>Send to Kundli group</h2></div>
+      box.innerHTML = `<div class="sheet-in"><div class="ph" style="margin:0 0 10px"><h2>${recheck ? `Send again for a re-check (round ${round})` : "Send to Kundli group"}</h2></div>
         <pre class="wa-preview">${esc(text)}</pre>
-        <p class="hint">WhatsApp opens with this message. Pick <b>Kundli - Matching</b> and tap Send. Circle then marks it sent and waits for Harshaben.</p>
+        <p class="hint">WhatsApp opens with this message. Pick <b>Kundli - Matching</b> and tap Send. Circle then marks it sent and waits for Harshaben.${recheck ? ` Her earlier "No match" stays on record as round ${hb.round}.` : ""}</p>
         <div style="display:flex;gap:8px"><button class="btn wa" data-go>${WA_ICON}<span>Open WhatsApp</span></button><button class="btn plain" data-x>Cancel</button></div></div>`;
       document.body.appendChild(box);
       box.querySelector("[data-x]").onclick = () => box.remove();
       box.querySelector("[data-go]").onclick = () => {
         window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
         box.remove();
+        if (recheck) {
+          hb = { round, rounds: [...hb.rounds, { round: hb.round, sentOn: fam.sentOn.value || "", result: fam.querySelector('input[name="kundli"]:checked')?.value || "", notes: fam.harshabenNotes.value.trim().slice(0, 2000) }].slice(-20) };
+          fam.querySelectorAll('input[name="kundli"]').forEach((r) => (r.checked = r.value === "Pending"));
+          fam.harshabenNotes.value = ""; fam.sentOn.value = "";
+        }
         fam.sentToHarshaben.checked = true; fam.sentToHarshaben.closest(".tick").classList.add("on");
         if (!fam.sentOn.value) fam.sentOn.value = new Date().toISOString().slice(0, 10);
         fam.requestSubmit();
       };
     };
+    fam.querySelector('[data-act="wa"]').onclick = () => sendToKundli(false);
+    fam.querySelector('[data-act="recheck"]')?.addEventListener("click", () => sendToKundli(true));
     fam.onsubmit = async (e) => {
       e.preventDefault();
       const t = (n) => fam[n].value.trim();
@@ -632,11 +649,12 @@ function bindDetail(c) {
         birthName: t("birthName").slice(0, 60), birthDate: fam.birthDate.value, birthTime: fam.birthTime.value, birthPlace: t("birthPlace").slice(0, 60),
         sentToHarshaben: fam.sentToHarshaben.checked, sentOn: fam.sentOn.value,
         kundli: fam.querySelector('input[name="kundli"]:checked')?.value || "", harshabenNotes: t("harshabenNotes").slice(0, 2000),
+        round: hb.round, rounds: hb.rounds,
         familyFeedback: t("familyFeedback").slice(0, 2000), updatedBy: myName(), updatedAt: serverTimestamp() };
       try {
         await setDoc(doc(db, "candidates", id, "progress", "family"), v);
         // Move the stage along the family's path (never backwards past what Harsh set) and show Harshaben's word on the list.
-        await updateDoc(doc(db, "candidates", id), { familyStage: impliedStage(v), harshaben: v.kundli, sentOn: v.sentToHarshaben ? v.sentOn : "" });
+        await updateDoc(doc(db, "candidates", id), { familyStage: impliedStage(v), harshaben: v.kundli, sentOn: v.sentToHarshaben ? v.sentOn : "", hbRound: v.round });
         document.activeElement?.blur(); toast("Saved");
       } catch (err) { toast(niceErr(err)); }
     };
@@ -674,11 +692,17 @@ function bindDetail(c) {
 // ---------- family's part (Mummy & Papa): contact her mother, swap biodatas, kundli, feedback ----------
 const WA_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 2s.8 2.3.9 2.5c.1.2 1.6 2.5 4 3.5 1.5.6 2.1.7 2.8.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>`;
 // The message for the Kundli - Matching group. Shown in full before WhatsApp opens; the person sending taps Send.
-function kundliText(c, v) {
+function kundliText(c, v, round = 1) {
   const d = v.birthDate ? fmtDob(v.birthDate) : "";
   const t = v.birthTime ? new Date(`2000-01-01T${v.birthTime}`).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }) : "";
-  return [`Kundli matching for Harsh`, ``, `Girl: ${v.birthName ? `${c.name} (birth name ${v.birthName})` : c.name}`,
+  return [round > 1 ? `Kundli matching for Harsh (re-check, round ${round})` : `Kundli matching for Harsh`, ``, `Girl: ${v.birthName ? `${c.name} (birth name ${v.birthName})` : c.name}`,
     `Birth date: ${d || "-"}`, `Birth time: ${t || "-"}`, `Birth place: ${v.birthPlace || "-"}`].join("\n");
+}
+// Earlier rounds of matching, oldest first: when it was sent, what Harshaben said.
+function roundsHtml(rounds) {
+  if (!Array.isArray(rounds) || !rounds.length) return "";
+  return `<ul class="rounds">${rounds.map((r) => `<li><span class="tag ${r.result === "Match" ? "ok" : r.result === "No match" ? "bad" : "mute"}">Round ${esc(r.round)}: ${esc(r.result || "no answer")}</span>
+    <span>${r.sentOn ? `sent ${esc(fmtDob(r.sentOn))}` : ""}${r.notes ? ` · ${esc(r.notes)}` : ""}</span></li>`).join("")}</ul>`;
 }
 function familyPartHtml() {
   const p = D.prog; if (!p) return "";
@@ -698,8 +722,12 @@ function familyPartHtml() {
         <label class="f"><span>Birth time</span><input class="in-t" type="time" name="birthTime" value="${esc(p.birthTime)}"></label></div>
       <button class="btn wa wide" type="button" data-act="wa">${WA_ICON}<span>Send Janmakshar to Kundli group</span></button>
       ${tick("sentToHarshaben", "4. Sent to Harshaben", `<input class="in-t sm" type="date" name="sentOn" value="${esc(p.sentOn)}" aria-label="When">`)}
-      <div class="f" style="margin-top:12px"><span class="lbl">5. Harshaben's feedback</span><div class="seg">${KUNDLI.slice(1).map((x) => `<label class="${kund === x ? "on" : ""}"><input type="radio" name="kundli" value="${x}" ${kund === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
+      <div class="f" style="margin-top:12px"><span class="lbl">5. Harshaben's feedback${p.round > 1 ? ` <span class="tag blue">Round ${p.round}</span>` : ""}</span><div class="seg">${KUNDLI.slice(1).map((x) => `<label class="${kund === x ? "on" : ""}"><input type="radio" name="kundli" value="${x}" ${kund === x ? "checked" : ""}>${x}</label>`).join("")}</div></div>
       <label class="f"><textarea class="in-t" name="harshabenNotes" maxlength="2000" placeholder="What Harshaben said">${esc(p.harshabenNotes)}</textarea></label>
+      ${kund === "No match" ? `<div class="recheck"><div><b>Harshaben said no match${p.round > 1 ? ` (round ${p.round})` : ""}.</b> She is parked under <b>Failed by Harshaben</b>, not let go.
+        Check the birth name, date, time and place above (a wrong birth time is the usual culprit), fix anything, then send again. If it is final, Harsh moves her to Pass.</div>
+        <button class="btn ghost sm" type="button" data-act="recheck">${WA_ICON}<span>Send again for a re-check</span></button></div>` : ""}
+      ${roundsHtml(p.rounds)}
       <label class="f"><span>6. About her family</span><textarea class="in-t" name="familyFeedback" maxlength="2000" placeholder="How the family came across, what you learnt">${esc(p.familyFeedback)}</textarea></label>
       <div style="display:flex;align-items:center;gap:10px"><button class="btn ghost sm" type="submit">Save</button>
       ${p.updatedBy ? `<span class="hint">Last by ${esc(p.updatedBy)} · ${fmtTime(p.updatedAt)}</span>` : ""}</div>

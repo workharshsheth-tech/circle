@@ -39,10 +39,11 @@ service cloud.firestore {
       allow write: if isOwner();
       // Family can move the stage along their own part of the path and record Harshaben's word. Nothing else.
       allow update: if isMember() && email() in resource.data.viewers
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['familyStage', 'harshaben', 'sentOn'])
-        && request.resource.data.familyStage in ['New', 'Mothers in touch', 'Biodatas exchanged', 'Janmakshar received', 'Waiting for Harshaben', 'Harshaben matched']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['familyStage', 'harshaben', 'sentOn', 'hbRound'])
+        && request.resource.data.familyStage in ['New', 'Mothers in touch', 'Biodatas exchanged', 'Janmakshar received', 'Waiting for Harshaben', 'Harshaben matched', 'Failed by Harshaben']
         && request.resource.data.get('sentOn', '') is string && request.resource.data.get('sentOn', '').size() <= 10
-        && request.resource.data.harshaben in ['', 'Pending', 'Match', 'No match'];
+        && request.resource.data.harshaben in ['', 'Pending', 'Match', 'No match']
+        && request.resource.data.get('hbRound', 1) is int && request.resource.data.get('hbRound', 1) >= 1 && request.resource.data.get('hbRound', 1) <= 20;
 
       // Admin-only notes (contact numbers, source, private remarks). Reviewers never read this.
       match /private/{doc} {
@@ -60,12 +61,14 @@ service cloud.firestore {
         allow delete: if isOwner() || (canSee(id) && who == email());
       }
 
-      // Family's part: spoke to her mother, biodatas exchanged, kundli, feedback on her family.
+      // Family's part: spoke to her mother, biodatas exchanged, kundli (with re-check rounds), feedback on her family.
       match /progress/{doc} {
         allow read: if canSee(id);
         allow write: if canSee(id) && doc == 'family'
           && request.resource.data.keys().hasOnly(['motherContacted', 'contactedOn', 'biodataExchanged', 'birthName', 'birthDate', 'birthTime', 'birthPlace',
-               'sentToHarshaben', 'sentOn', 'kundli', 'harshabenNotes', 'familyFeedback', 'updatedBy', 'updatedAt'])
+               'sentToHarshaben', 'sentOn', 'kundli', 'harshabenNotes', 'round', 'rounds', 'familyFeedback', 'updatedBy', 'updatedAt'])
+          && request.resource.data.get('round', 1) is int && request.resource.data.get('round', 1) >= 1 && request.resource.data.get('round', 1) <= 20
+          && request.resource.data.get('rounds', []) is list && request.resource.data.get('rounds', []).size() <= 20
           && request.resource.data.motherContacted is bool && request.resource.data.biodataExchanged is bool
           && request.resource.data.kundli in ['', 'Pending', 'Match', 'No match']
           && request.resource.data.familyFeedback is string && request.resource.data.familyFeedback.size() <= 2000

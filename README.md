@@ -56,8 +56,17 @@ Someone not on the list who tries to sign in sees "Not on the list yet" and no d
 ## How a rishta moves in Circle
 
 Stages follow the family's usual path: **New → Mothers in touch → Biodatas exchanged → Janmakshar received →
-Waiting for Harshaben → Harshaben matched → Families meet → Harsh meets her → Going ahead**, plus **On hold** and **Pass**.
+Waiting for Harshaben → Harshaben matched → Families meet → Harsh meets her → Going ahead**, plus three side doors:
+**Failed by Harshaben**, **On hold** and **Pass**.
 The family's ticks move a profile forward up to "Harshaben matched"; after that Harsh moves it.
+
+- **Failed by Harshaben** is not Pass. When the family records Harshaben's feedback as "No match", the profile is parked
+  here (red dot, "Harshaben: no match" on the list). The profile shows **Send again for a re-check**: check the birth
+  name, date, time and place (a wrong birth time is the usual culprit), fix anything, and the Janmakshar goes to the
+  Kundli group again as round 2. Round 1's verdict and what Harshaben said stay on record under the feedback. The profile
+  goes back to "Waiting for Harshaben" with a "Re-check" tag. If Harsh has already moved her past Harshaben himself
+  (Families meet or later), his stage wins and the no-match shows only as a tag.
+- **Pass** stays Harsh's own call: she won't meet, or we let it go. Harsh picks it from the stage menu.
 
 - **Family's part** (on every profile, filled by Mummy, Papa or anyone it's shared with): spoke to her mother (and when),
   biodatas exchanged, her Janmakshar (birth name, date, time, place), **Send Janmakshar to Kundli group** (WhatsApp opens with
